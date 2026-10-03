@@ -31,13 +31,30 @@ SOFILE = re.compile(r"\blib[\w.+-]*?\.so\b")
 SHOW = 3
 
 
-def manifest_permissions(work):
+def manifest_text(work):
+  """the decoded manifest, or None when the sample has none (a dex-only child)"""
   for p in (os.path.join(work, "apktool", "AndroidManifest.xml"), os.path.join(work, "manifest.xml")):
-    if os.path.isfile(p):
+    if os.path.isfile(p) and os.path.getsize(p):
       with open(p, errors="replace") as f:
-        text = f.read()
-      return set(re.findall(r'<uses-permission(?:-sdk-23)?\b[^>]*?android:name="([^"]+)"', text))
-  return set()
+        return f.read()
+  return None
+
+
+def manifest_permissions(text):
+  return set(re.findall(r'<uses-permission(?:-sdk-23)?\b[^>]*?android:name="([^"]+)"', text or ""))
+
+
+def host_chain(name):
+  """the sample, then, while a sample has no manifest of its own, its parent (work/<parent>.dec<k>/
+  and .emb<k>/ children): a dex-only child runs in its parent's process, with the parent's
+  permissions and native libraries"""
+  chain = [name]
+  while manifest_text(os.path.join(ROOT, "work", chain[-1])) is None:
+    m = re.match(r"(.+)\.(?:dec|emb)\d+$", chain[-1])
+    if not m or not os.path.isdir(os.path.join(ROOT, "work", m.group(1))):
+      break
+    chain.append(m.group(1))
+  return chain
 
 
 def shipped_libraries(work):
@@ -75,9 +92,12 @@ def main():
   if not scopes:
     scopes = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "scope.py"), name],
                             capture_output=True, text=True).stdout.split()
-  requested = manifest_permissions(work)
+  chain = host_chain(name)
+  requested = manifest_permissions(manifest_text(os.path.join(ROOT, "work", chain[-1])))
   levels = android_perms.levels()
-  shipped = shipped_libraries(work)
+  shipped = set()
+  for c in chain:
+    shipped |= shipped_libraries(os.path.join(ROOT, "work", c))
   perms, libs = {}, {}
   for rel, p in files(work, scopes):
     with open(p, errors="replace") as f:
@@ -92,6 +112,9 @@ def main():
   print("\n## Permissions the code names but the manifest does not request (features behind them fail)")
   print("Platform permissions only; signature-level ones no ordinary app can hold are marked. A name in")
   print("a list or table (describing other apps) is not a check: read the line.")
+  if len(chain) > 1:
+    print("This sample has no manifest of its own: it runs in the process of work/%s/, whose manifest" % chain[-1])
+    print("and native libraries count here.")
   n = 0
   for perm in sorted(perms):
     if perm in requested or perm not in levels or perm.startswith("android.permission.BIND_"):
@@ -104,7 +127,8 @@ def main():
   if not n:
     print("(none)")
 
-  print("\n## Native libraries the code names but the APK does not ship (raw/lib, raw/assets)")
+  print("\n## Native libraries the code names but the APK does not ship (raw/lib, raw/assets%s)"
+        % ("; of %s too" % ", ".join("work/%s/" % c for c in chain[1:]) if len(chain) > 1 else ""))
   n = 0
   for lib in sorted(libs):
     if lib in shipped:

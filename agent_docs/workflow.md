@@ -242,11 +242,10 @@ script covers:
    or the unpack steps: `./cupella gate baseline` on the unchanged scripts first, then `./cupella gate`;
    keep the change only on PASS.
 4. Check that past reports' findings are still pointed at: `./cupella lead-eval.py <name>`.
-5. After changes to extraction, `unpack.sh`, `elf.py`, or the injection scan, run the
-   fixtures (`./cupella fixtures/zipslip-test.sh`, `./cupella fixtures/injection-test.sh`,
-   `./cupella fixtures/elf-headers-test.sh <lib.so ...>`), re-unpack one benign and one
-   malformed sample with `-f`, and rerun `./cupella cite-check.py` on every report: a
-   change in what jadx reads moved the Octo report's citations once.
+5. After changes to extraction, `unpack.sh`, `elf.py`, or the injection scan, run
+   `./cupella check` (the fixtures, the native fixture, and `cite-check.py` on every
+   report, then the gate), and re-unpack one benign and one malformed sample with `-f`:
+   a change in what jadx reads moved the Octo report's citations once.
 6. The gate measures leads, not every section: a new informational section (a triage
    check, a summary) passes with "improved: none". Run it over the whole corpus and read
    its hits before trusting it; the first class-coverage count flagged 178 samples,

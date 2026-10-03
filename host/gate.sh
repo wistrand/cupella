@@ -7,10 +7,14 @@
 #   ./cupella gate            rescan, rerun, and compare with the baseline: PASS when no
 #                        coverage number dropped and no benign lead rate rose by more
 #                        than one app (4 points of 25); FAIL lists what moved
+#                        (a report's model-leads.txt metric with no file is listed as not
+#                        compared: only the optional model step writes that file)
 #
 # Benchmarks: Ghera pairs (fix-eval.py), MalEval behavior signals (bench-maleval.py),
 # the analyzed apps' reports (lead-eval.py, cite-check.py). Datasets and procedure:
 # agent_docs/benchmarks.md. Takes a few minutes; everything runs through ./cupella.
+# GATE_JOBS: parallel scans (default: half the cores). A failed scan's output is kept in
+# work/_gate/logs/.
 set -euo pipefail
 
 # the checkout: this file is host/gate.sh in it; the benchmark data is the checkout's own
@@ -20,25 +24,48 @@ unset CUPELLA_WORKSPACE
 mode=${1:-check}
 out="$root/work/_gate"
 mkdir -p "$out"
-jobs=${GATE_JOBS:-4}
+jobs=${GATE_JOBS:-$(( $(nproc) / 2 > 1 ? $(nproc) / 2 : 1 ))}
 
 rescan() {
-  # Ghera pairs, MalEval samples (scan.sh also rescans embedded payloads), analyzed apps
+  # Ghera pairs, MalEval samples (scan.sh also rescans embedded payloads), analyzed apps.
+  # One pool, largest dex first, so a big report app overlaps the many small scans
+  # instead of following them. A job line is "<flag> <name>": flag 1 scans with scope "."
   ls -d work/*-Lean-benign work/*-Lean-secure 2>/dev/null | xargs -r -n1 basename > "$out/names.txt"
   if [ -d data/maleval ]; then
     find data/maleval -name '*.apk' -printf '%f\n' | sed 's/\.apk$//' >> "$out/names.txt"
   fi
-  # names reach sh as "$1", never as part of the script text
-  xargs -P "$jobs" -I{} sh -c './cupella scan.sh "$1" > /dev/null 2>&1 || ./cupella scan.sh "$1" > /dev/null 2>&1 || echo "scan failed: $1"' _ {} < "$out/names.txt"
   for r in reports/*.md; do
     n=$(basename "$r" .md)
-    [ -d "work/$n" ] || continue
-    if grep -q '^scope: \. ' "work/$n/scan.txt" 2>/dev/null; then
-      ./cupella scan.sh "$n" . > /dev/null 2>&1 || ./cupella scan.sh "$n" . > /dev/null 2>&1 || echo "scan failed: $n"
+    [ -d "work/$n" ] && echo "$n"
+  done >> "$out/names.txt"
+  sort -u -o "$out/names.txt" "$out/names.txt"
+  while IFS= read -r n; do
+    f=0
+    grep -q '^scope: \. ' "work/$n/scan.txt" 2>/dev/null && f=1
+    size=$( { find "work/$n/raw" -maxdepth 1 -name '*.dex' -printf '%s\n' 2>/dev/null || true; } | awk '{s += $1} END {print s + 0}')
+    printf '%s\t%s %s\n' "$size" "$f" "$n"
+  done < "$out/names.txt" | sort -t "$(printf '\t')" -k1,1nr | cut -f2- > "$out/jobs.txt"
+  rm -rf "$out/logs" "$out/done"
+  mkdir -p "$out/logs"
+  total=$(wc -l < "$out/jobs.txt")
+  echo "   $total samples, $jobs at a time (GATE_JOBS); progress every 50, and every scan over 30s"
+  # the job line reaches sh as "$1", never as part of the script text; a failed scan's
+  # output stays in work/_gate/logs/
+  OUT=$out TOTAL=$total xargs -d '\n' -P "$jobs" -n1 sh -c '
+    f=${1%% *}; n=${1#* }
+    if [ "$f" = 1 ]; then set -- "$n" .; else set -- "$n"; fi
+    log="$OUT/logs/$(printf %s "$n" | tr -c "A-Za-z0-9._-" _).txt"
+    start=$(date +%s)
+    if ./cupella scan.sh "$@" > "$log" 2>&1 || ./cupella scan.sh "$@" >> "$log" 2>&1; then
+      rm -f "$log"
     else
-      ./cupella scan.sh "$n" > /dev/null 2>&1 || ./cupella scan.sh "$n" > /dev/null 2>&1 || echo "scan failed: $n"
+      echo "   scan failed: $n (work/_gate/logs/$(basename "$log"))"
     fi
-  done
+    t=$(($(date +%s) - start))
+    echo x >> "$OUT/done"
+    k=$(wc -l < "$OUT/done")
+    if [ "$t" -ge 30 ] || [ $((k % 50)) = 0 ] || [ "$k" = "$TOTAL" ]; then echo "   [$k/$TOTAL] ${t}s $n"; fi
+  ' _ < "$out/jobs.txt"
 }
 
 measure() { # writes metric<TAB>value lines
@@ -49,7 +76,7 @@ measure() { # writes metric<TAB>value lines
     n=$(basename "$r" .md)
     [ -d "work/$n" ] || continue
     { echo "## $n"; ./cupella lead-eval.py "$n" 2>&1 | grep 'covers' || true
-      ./cupella cite-check.py "$n" 2>&1 | sed -n 2p || true; } >> "$out/lead-eval.txt"
+      ./cupella cite-check.py "$n" 2>&1 | grep 'citations checked' || true; } >> "$out/lead-eval.txt"
   done
   python3 - "$out" <<'EOF'
 import re, sys
@@ -89,7 +116,7 @@ with open(out + "/metrics.txt", "w") as f:
 EOF
 }
 
-echo "== rescanning (this takes a few minutes)"
+echo "== rescanning"
 rescan
 echo "== measuring"
 measure
@@ -104,9 +131,13 @@ python3 - bench/gate-baseline.txt "$out/metrics.txt" <<'EOF'
 import sys
 base = dict((l.split("\t")[0], int(l.split("\t")[1])) for l in open(sys.argv[1]) if "\t" in l)
 cur = dict((l.split("\t")[0], int(l.split("\t")[1])) for l in open(sys.argv[2]) if "\t" in l)
-fail, better = [], []
+fail, better, skipped = [], [], []
 for k, b in sorted(base.items()):
   c = cur.get(k)
+  if c is None and "model-leads.txt" in k:
+    # the optional model step writes model-leads.txt and the rescan never does: a
+    # missing file (removed by a re-unpack) says nothing about the scripts under test
+    skipped.append("%s (was %d): no model-leads.txt; rerun ./cupella model-leads.py to compare" % (k, b)); continue
   if c is None:
     fail.append("%s: missing (was %d)" % (k, b)); continue
   if " benign " in k:
@@ -119,9 +150,12 @@ for k in sorted(set(cur) - set(base)):
   better.append("%s: new metric %d" % (k, cur[k]))
 print("improved:" if better else "improved: none")
 for x in better: print("  " + x)
+if skipped:
+  print("not compared:")
+  for x in skipped: print("  " + x)
 if fail:
   print("FAIL:")
   for x in fail: print("  " + x)
   sys.exit(1)
-print("PASS (%d metrics, none worse)" % len(base))
+print("PASS (%d metrics, none worse%s)" % (len(base) - len(skipped), ", %d not compared" % len(skipped) if skipped else ""))
 EOF

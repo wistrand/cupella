@@ -12,6 +12,9 @@
 #   ./cupella sync                           in a workspace: refresh its doc copies now
 #   ./cupella gate [baseline]                benchmark gate for rule changes (host/gate.sh;
 #                                        always on the checkout's benchmark data)
+#   ./cupella check [--no-gate]              regression run after script changes: fixtures,
+#                                        native fixture, cite-check on every report, gate
+#                                        (host/check.sh; in the checkout)
 #   ./cupella help                           this list and the scripts you can run
 #
 # Paths are relative to the repo root, as in the examples. The container sees
@@ -365,6 +368,9 @@ case "$cmd" in
     # host-side: rescans and measures through ./cupella, on the checkout's data/ and bench/
     [ "$ws" = "$root" ] || echo "== gate runs on the checkout's benchmark data ($root), not this workspace" >&2
     exec env -u CUPELLA_WORKSPACE "$root/host/gate.sh" "$@" ;;
+  check)
+    [ "$ws" = "$root" ] || echo "== check runs on the checkout ($root), not this workspace" >&2
+    exec env -u CUPELLA_WORKSPACE "$root/host/check.sh" "$@" ;;
   versions) offline "$image" cat /opt/tools/VERSIONS; exit ;;
   shell)    exec "$docker" run -it "${common[@]}" --network none "${analysis[@]}" "$image" bash ;;
 esac

@@ -24,13 +24,14 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 | `AGENTS.md`              | the instructions for any coding agent; `CLAUDE.md` imports it for Claude Code |
 | `roles/`                 | harness-neutral subagent roles: `reader` (no shell), `decryptor` (listed `./cupella` commands only) |
 | `.claude/agents/`        | Claude Code agent types `apk-reader`, `apk-decryptor`, generated from `roles/` by `./cupella setup` |
-| `cupella`                | wrapper: runs a script from `scripts/` in the container; also `setup` (first use, workspaces), `build`, `versions`, `shell`, `sync`, `gate`, `help` |
+| `cupella`                | wrapper: runs a script from `scripts/` in the container; also `setup` (first use, workspaces), `build`, `versions`, `shell`, `sync`, `gate`, `check`, `help` |
 | `bench-setup`            | fetches the benchmark datasets, checked against `bench-sources/` (host side; downloads and extraction only) |
 | `bench-sources/`         | source and hash of every benchmark file; never shown to analysis agents |
 | `docs/`                  | the project web site (static, GitHub Pages: serve from `docs/`); not agent documentation, which is `agent_docs/` |
 | `.claude/settings.json`  | project permission rules: `./cupella` allowed, host parsing tools and `adb` denied |
 | `.cupella-workspace`     | marks a workspace made by `./cupella setup --workspace` and records the checkout path, the harness, and a stamp of the copied docs. A workspace has its own `data/`, `work/`, `reports/`, `proposals/`; read-only copies of `AGENTS.md`, `agent_docs/`, `prompts/`, `roles/`; `WORKSPACE.md`; a `cupella` wrapper; for Claude Code also `CLAUDE.md`, `.claude/settings.json`, and agent types. Every `./cupella` run there refreshes the copies when the checkout changed |
 | `host/gate.sh`           | benchmark gate for rule changes, run as `./cupella gate baseline`, then `./cupella gate` |
+| `host/check.sh`          | regression run after script changes, run as `./cupella check [--no-gate]`: fixtures, native fixture (built with the host's clang), `cite-check.py` on every report, gate |
 | `Dockerfile`             | the analysis image; tool versions pinned here                           |
 | `bench/`                 | benchmark metadata and answer keys; gitignored; never shown to analysis agents |
 | `cache/`                 | blutter builds per Dart version; gitignored, safe to delete (costs a rebuild) |
@@ -137,6 +138,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella cite-check.py <name>                    # before finishing a report
 ./cupella lead-eval.py [-v] <name>                # lead files vs. the report's Findings
 ./cupella gate baseline; ./cupella gate           # rule loop
+./cupella check [--no-gate]                       # regression run after script changes
 ./cupella model-leads.py <name> [java-scope ...]  # optional; needs llav
 ./cupella --llav <script> [args]                  # any script that imports llav_client
 ```

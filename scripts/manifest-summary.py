@@ -10,6 +10,7 @@ the app itself, Google, other apps, or nobody (invented names, counted only).
 Usage: scripts/manifest-summary.py <name> > work/<name>/manifest-summary.txt
 """
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -54,6 +55,13 @@ def main():
   path = os.path.join(root_dir, "apktool", "AndroidManifest.xml")
   if not os.path.exists(path):
     path = os.path.join(root_dir, "manifest.xml")
+  if not os.path.isfile(path) or not os.path.getsize(path):
+    parent = re.match(r"(.+)\.(?:dec|emb)\d+$", name)
+    print("No AndroidManifest.xml in this sample (dex only).")
+    if parent:
+      print("A child sample without a manifest runs inside its parent's process, with the parent's")
+      print("permissions and native libraries: see work/%s/manifest-summary.txt." % parent.group(1))
+    return
   m = ET.parse(path).getroot()
   app = m.find("application")
   sdk = m.find("uses-sdk")

@@ -136,6 +136,10 @@ block what was removed and added.
   backticks (`util/Foo.java:120-130`), "`Foo.bar` (`util/Foo.java:120`)" for a method
   and its lines, a quote directly followed by its citation, native and Dart function
   names as they appear in the decompiled output.
+- Always cite a file with at least its parent directory (`accessibility/FooService.java:12`),
+  never a bare file name: `jadx-retry/` adds a second copy of retried classes, and
+  obfuscated children repeat names like `Ccase.java` across packages, so a bare name
+  that resolves today becomes ambiguous after a rescan.
 
 ## Confidence labels
 

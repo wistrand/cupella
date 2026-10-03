@@ -80,10 +80,10 @@ From the agent benchmarks; each is small and testable on the same samples.
   the safety classifier. Spot checks of key claims held; the verifier then found 6
   overstated and 1 wrong of 47, mostly gates and counts. An earlier run used three
   readers.
-- Child-sample gates: `scan.sh` on a `.dec<k>` child lists the parent's native library as
-  not shipped, and a dex-only child has an empty `manifest-summary.txt`. The permission
-  and native-library gates for a child should fall back to the parent's manifest and
-  `raw/lib/` (seen on the BTMOB sample's `.dec1` child). Not done.
+- Child samples without a manifest (done 2026-10-03): `code-vs-package.py` uses the
+  parent's manifest and adds the parent's native libraries, and `manifest-summary.txt`
+  points to the parent's. Left: `structure-leads.py` takes entry points from the child's
+  own (empty) manifest, so a dex-only child gets no component entry points.
 - Coordination for agent runs at scale. A full MalEval agent run (255 samples, each with
   reader, decryption, and verification agents, plus retries of stopped readers) is a
   work queue that prompts and progress files handle only because runs are small.
@@ -102,9 +102,11 @@ From the agent benchmarks; each is small and testable on the same samples.
   verifiers on 2026-10-03 without needing a shell. The benchmark runs of 2026-10-02 used
   general-purpose agents with the same rules in their prompts; rerun one benchmark with
   the restricted types to confirm. `apk-decryptor` has not run as its own type yet.
-- `stringfog.py` lists R8-outlined string concatenation helpers as undecodable decoders
-  (launcher B: `b.c0.j`, body `return str + str2`). Skip methods whose body is a plain
-  concatenation, then run the gate.
+- `stringfog.py` skips methods whose body only concatenates their arguments (done
+  2026-10-03). Launcher B's `b.c0.j` no longer reached the candidate list before the change
+  (stricter constant tracking), so the skip has no positive case in the corpus yet; BTMOB's
+  decoder was unaffected. Other non-decoders still listed: `SystemPropertiesCompat.get`
+  (key, default) in one MalEval sample.
 - Workspaces: the copy-and-refresh design (2026-10-03) was tested function by function
   and through the wrapper, not by a full `./cupella setup --workspace` on a fresh
   directory. Proposals in `proposals/` have no tooling yet; a command that lists them
@@ -217,8 +219,9 @@ From the agent benchmarks; each is small and testable on the same samples.
 - `bench-setup`'s MalEval part has not run end to end (the data was fetched by hand
   before the script existed); Ghera and the vulnerable apps were checked against the
   files already present.
-- A regression run: the native fixture, `cite-check.py` on all reports, and the
-  scripted benchmarks, as one command to run after script changes.
+- `./cupella check` (2026-10-03) runs the fixtures, the native fixture, `cite-check.py` on
+  every report, and the gate. It has not been run end to end yet; the native step needs
+  clang and ld.lld on the host (the image has neither).
 
 ## Out of scope by design
 

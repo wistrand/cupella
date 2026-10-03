@@ -138,19 +138,40 @@ def _targets(buf, base, pc, unit, op):
   return set()
 
 
-def calls(d, buf):
+CONCAT_CALLS = ("Ljava/lang/StringBuilder;->", "Ljava/lang/String;->concat(", "Ljava/lang/String;->valueOf(")
+
+
+def plain_concat(d, buf, base, n):
+  """True when a method body only joins its arguments (R8-outlined `return a + b`):
+  StringBuilder or String.concat calls, moves, and a return, nothing else"""
+  for pc, unit, op in insns(buf, base, n):
+    if op in (0x00, 0x07, 0x08, 0x0c, 0x11) or op == 0x22:  # nop, move-object, move-result-object, return-object, new-instance
+      continue
+    if 0x6e <= op <= 0x72 or 0x74 <= op <= 0x78:  # invoke-*, invoke-*/range
+      key = d.method(struct.unpack_from("<H", buf, base + 2 * pc + 2)[0])[4]
+      if key.startswith(CONCAT_CALLS):
+        continue
+    return False
+  return True
+
+
+def calls(d, buf, concat):
   """{method_key: [(arg1, arg2), ...]} for static (String,String)String calls with constant args.
   A register keeps its const-string value until any instruction writes it; every value is
   dropped at branch targets, at move-exception, and after goto/return/throw, where it may
-  come from another path."""
+  come from another path. Keys of (String,String)String methods that only concatenate
+  their arguments are added to `concat`."""
   out = {}
   for _cls, data, _s, _i in d.classes():
-    for _idx, code in d.methods_of(data):
+    for idx, code in d.methods_of(data):
       if not code:
         continue
       try:
         (n,) = struct.unpack_from("<I", buf, code + 12)
         base, regs = code + 16, {}
+        mkey = d.method(idx)[4]
+        if mkey.endswith(SIG) and plain_concat(d, buf, base, n):
+          concat.add(mkey)
         targets = branch_targets(buf, base, n)
         for pc, unit, op in insns(buf, base, n):
           if pc in targets or op == 0x0d:  # join point or move-exception (handler entry)
@@ -184,19 +205,23 @@ def main():
     sys.exit(__doc__)
   name = sys.argv[1]
   work = os.path.join(ROOT, "work", name)
-  sites = {}
+  sites, concat = {}, set()
   for p in sorted(glob.glob(os.path.join(work, "raw", "classes*.dex"))):
     buf = open(p, "rb").read()
     try:
       d = dex.Dex(buf)
       if buf[:4] != b"dex\n":
         continue
-      for k, v in calls(d, buf).items():
+      for k, v in calls(d, buf, concat).items():
         sites.setdefault(k, []).extend(v)
     except (struct.error, IndexError, ValueError):
       continue
   cands = {k: v for k, v in sites.items() if len(v) >= MIN_CALLS}
   print("\n## Encrypted strings decoded by script (stringfog.py; plaintext in jadx-strings/)")
+  skipped = sorted(k for k in cands if k in concat)
+  if skipped:
+    print("(skipped, body only concatenates its arguments: %s)" % ", ".join(skipped))
+  cands = {k: v for k, v in cands.items() if k not in concat}
   if not cands:
     print("(no decoder-like methods: no static (String,String)String method with %d+ constant-argument calls)" % MIN_CALLS)
     return

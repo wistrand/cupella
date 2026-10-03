@@ -270,5 +270,5 @@ State these under "Analysis coverage" when they apply:
 `scripts/fixtures/native-fixture.c` is a small deliberately suspicious library with a
 header comment giving the build command (clang with the aarch64 target and lld, no
 NDK) and the expected output of `native-summary.py --file` and
-`native-disasm.py --jni`. Build it with each relocation packing variant listed there
-after changing `scripts/elf.py`.
+`native-disasm.py --jni`. `./cupella check` builds it with each relocation packing variant
+and checks that output; run it after changing `scripts/elf.py`.

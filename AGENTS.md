@@ -56,6 +56,7 @@ verification, and writes `reports/` (and docs, in the checkout).
 ./cupella cite-check.py <name>                  # before finishing any report
 ./cupella run-decryptor.sh <name>               # decryption stage (decryptor role)
 ./cupella gate baseline; ./cupella gate         # after changing scan, scope, or lead scripts
+./cupella check [--no-gate]                     # after any script change: fixtures, citations, gate
 ./cupella sync                                  # in a workspace: refresh the doc copies now
 ./cupella help                                  # commands and scripts
 ./bench-setup                                   # the user fetches the benchmark data (optional)
