@@ -92,6 +92,17 @@ def section(title, items, n=60):
     print("- %s" % it[:220])
 
 
+def split_required(root):
+  """the manifest says the app is installed as a base APK plus required splits"""
+  try:
+    with open(os.path.join(root, "manifest.xml"), errors="replace") as fh:
+      text = fh.read()
+  except OSError:
+    return False
+  return bool(re.search(r'requiredSplitTypes="[^"]+"|isSplitRequired="true"|'
+                        r'com\.android\.vending\.splits\.required"[^>]*value="true"', text))
+
+
 def main():
   name = sys.argv[1]
   root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "work", name)
@@ -105,9 +116,18 @@ def main():
   assets = os.path.join(raw, "assets", "flutter_assets")
   print("# Flutter summary: %s" % name)
   if lib is None:
-    print("No libapp.so: not a release-mode Flutter app (a debug build ships "
-          "assets/flutter_assets/kernel_blob.bin instead)." if os.path.isdir(assets)
-          else "Not a Flutter app.")
+    if not os.path.isdir(assets):
+      print("Not a Flutter app.")
+    elif os.path.exists(os.path.join(assets, "kernel_blob.bin")):
+      print("No libapp.so: a debug build. The Dart code is in assets/flutter_assets/kernel_blob.bin "
+            "(Dart kernel), which this script does not read.")
+    elif split_required(root):
+      print("No libapp.so in this file: the manifest requires splits, so this is the base APK of a "
+            "split install and the\nDart code is in the ABI split (config.<abi>.apk). The app's own "
+            "logic cannot be analyzed from this file.")
+    else:
+      print("No libapp.so and no kernel_blob.bin: the Dart code is not in this APK (stripped, or "
+            "delivered some other way).")
     return
   print("Strings from the Dart AOT snapshot. They show what the code can refer to, not "
         "what it does or when.\nsource: %s" % os.path.relpath(lib, os.path.join(root, "..", "..")))

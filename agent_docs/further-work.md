@@ -36,9 +36,10 @@ file when an item is done or new evidence moves it.
    arguments as leads into the native function, and add native sources and sinks
    (`send`, `write` on sockets, `system`) for dynamically linked libraries.
 4. **Dart.** `units.py` builds Dart call graphs from blutter output, but there are no
-   Dart flows, and Flutter apps split across config APKs lose `libapp.so` (one benign
-   MalEval app). Next steps: Dart sources and sinks from blutter call annotations; a
-   triage note when `libapp.so` is missing from the APK.
+   Dart flows. Next step: Dart sources and sinks from blutter call annotations. A Flutter
+   base APK of a split install has no `libapp.so` (4 MalEval samples); `triage.txt` and
+   `flutter-summary.txt` say so since 2026-10-03, and the benchmark should count such
+   apps apart.
 
 ## Detection gaps
 
@@ -210,10 +211,11 @@ From the agent benchmarks; each is small and testable on the same samples.
   with only the checkout or workspace mounted and no credentials beyond the model API,
   so a prompt injection that gets past the agent's rules has nothing to reach. Raised
   by an outside review of the site (2026-10-03).
-- **Evidence for published reports.** The example report's `work/` is not in the
-  repository; `docs/examples/23282313-evidence/` holds a hand-picked part. A script that
-  collects every file and line range a report cites into such a bundle would make every
-  citation checkable without the sample.
+- **Evidence for published reports** (`evidence-bundle.py`, 2026-10-03): writes the lines,
+  functions, and small files a report cites to `work/_evidence/<name>/` with an index.
+  It copies text verbatim, so secrets and indicators the report redacts are in it: a
+  redaction pass (the report's own redacted values, URL defanging) before publishing is
+  not built. `docs/examples/23282313-evidence/` is still the hand-picked set.
 - The model step (`model-leads.py`) adds ranking but no coverage on every benchmark so
   far. Keep it optional; spend no more on it unless a benchmark shows a gap it fills.
   A larger instruction-tuned model, not a code-specialized one, is the variant worth

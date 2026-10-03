@@ -17,7 +17,10 @@
 `unpack.sh` prints "Flutter app" and writes `flutter-summary.txt` and
 `flutter-strings.txt`. A release build has `libapp.so`; a debug build has
 `assets/flutter_assets/kernel_blob.bin` instead (Dart kernel, far easier to read; say
-so in the report).
+so in the report). When `triage.txt` has a "Split APK" section and no native libraries,
+`libapp.so` is in the ABI split (`config.<abi>.apk`), not in this file: the app's Dart
+logic cannot be analyzed, only the Java embedding, plugins, manifest, and assets. Say so
+in the report and ask for the split.
 
 ## What each tool sees
 

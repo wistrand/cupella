@@ -18,7 +18,7 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 | `data/`                  | input APKs, read-only (mounted read-only in the container); any subdirectories; benchmark APKs in `data/ghera/`, `data/maleval/` (live malware), `data/vulnapps/`; gitignored |
 | `work/<name>/`           | derived output per APK, disposable, gitignored                          |
 | `work/<name>.emb<k>/`, `work/<name>.dec<k>/` | child samples: payloads found by content, and decrypted payloads |
-| `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs        |
+| `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs, evidence bundles (`work/_evidence/<name>/`) |
 | `reports/<name>.md`      | the analysis report, the only authored output per sample                |
 | `scripts/`               | everything that runs in the container (mounted read-only)               |
 | `prompts/`               | prompt templates for subagent stages (`decrypt.md`, `verify-report.md`, `read-area.md`, `verify.md`); `prompts/bench/` for benchmarks |
@@ -86,6 +86,7 @@ On demand:
 | `decryptor-lint.py`           | rejects decryptors that could run code or reach the network             |
 | `cite-check.py`               | checks a report's citations against `work/`                             |
 | `lead-eval.py`                | scores lead files against the functions a report's Findings cite        |
+| `evidence-bundle.py`          | collects what a report cites into `work/_evidence/<name>/`: excerpts of the cited lines, cited native and Dart functions, small cited text files, and `INDEX.md`; text only |
 | `quark-scan.sh`               | runs Quark-Engine on a sample (`-n <name>`: `repaired.apk` when present) or APK paths; result cached in `tools/quark.json` (`tools/quark.failed` after a failure; `-f` reruns); `scan.sh` runs it |
 | `quark-leads.py`              | Quark-Engine matches (80%/100%, by calling method) as `quark-leads.txt`, app scope first; `scan.sh` runs it |
 | `model-leads.py`              | optional local-model reading list (`model-leads.txt`)                   |
@@ -140,6 +141,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella reference-check.py <name> > work/<name>/reference-check.txt   # NETWORK
 ./cupella run-decryptor.sh <name>                 # decryption stage
 ./cupella cite-check.py <name>                    # before finishing a report
+./cupella evidence-bundle.py <name>               # for a report to be published: the cited lines as work/_evidence/<name>/
 ./cupella lead-eval.py [-v] <name>                # lead files vs. the report's Findings
 ./cupella gate baseline; ./cupella gate           # rule loop
 ./cupella check [--no-gate]                       # regression run after script changes

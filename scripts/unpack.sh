@@ -248,6 +248,23 @@ sweep_links
   done
   echo "(none listed above means a plain dex app; for Flutter see flutter-summary.txt)"
   echo
+  # the base APK of a split install: what the manifest says is in other APK files
+  split_types=$(grep -o -E 'requiredSplitTypes="[^"]+"' "$out/manifest.xml" 2>/dev/null | head -n 1 | cut -d'"' -f2 || true)
+  if [ -n "$split_types" ] || grep -q -E 'com\.android\.vending\.splits\.required"[^>]*value="true"|isSplitRequired="true"' "$out/manifest.xml" 2>/dev/null; then
+    echo "## Split APK: parts of the app are in other files"
+    echo "The manifest requires splits (${split_types:-types not named}): this file is the base APK of a split install."
+    if ! find "$out/raw/lib" -name '*.so' 2>/dev/null | grep -q .; then
+      echo "native libraries: none in this file; they are in the ABI split (config.<abi>.apk). \"No native code\" is not a finding here."
+      if [ -d "$out/raw/assets/flutter_assets" ] || grep -q -E '\bio\.flutter\.' "$out/dex/classes.txt" 2>/dev/null; then
+        echo "Flutter: the app's Dart code (libapp.so) is in that split, so the app's own logic is not in this file."
+        echo "Only the Java embedding, plugins, manifest, and assets can be analyzed. Say so in the report; ask for the ABI split."
+      fi
+    fi
+    case "$split_types" in *density*|*language*)
+      echo "resources: density or language resources are in config splits; strings and drawables here may be partial." ;;
+    esac
+    echo
+  fi
   echo "## Embedded code found by content (each unpacked as work/<child>/; scan.sh scans them)"
   [ -s "$out/embedded.txt" ] && cat "$out/embedded.txt" || echo "none"
   echo

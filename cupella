@@ -412,7 +412,7 @@ case "$cmd" in
     done
     "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-decryptor.sh --exec "$n" \
       && offline "$image" scripts/run-decryptor.sh --unpack "$n" ;;
-  lead-eval.py | cite-check.py)
+  lead-eval.py | cite-check.py | evidence-bundle.py)
     offline -v "$ws/reports:/repo/reports:ro" "$image" "scripts/$cmd" "$@" ;;
   bench-*.py)
     mkdir -p "$root/bench"

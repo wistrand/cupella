@@ -147,6 +147,9 @@ was removed and added.
   never a bare file name: `jadx-retry/` adds a second copy of retried classes, and
   obfuscated children repeat names like `Ccase.java` across packages, so a bare name
   that resolves today becomes ambiguous after a rescan.
+- A report that will be published needs its evidence readable without the sample: run
+  `./cupella evidence-bundle.py <name>` and review `work/_evidence/<name>/` before sharing it.
+  The excerpts are verbatim, so they hold what the report redacts.
 
 ## Confidence labels
 

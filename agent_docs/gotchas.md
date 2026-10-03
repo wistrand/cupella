@@ -50,7 +50,10 @@ app, and malware is named by its public family (BTMOB, Octo).
 - **Not every `.apk`-like file is a single APK.** `.xapk`, `.apks`, `.apkm` are zips
   holding a base APK plus splits. A lone `base.apk` from a split install lacks the
   native libraries and density/language resources, so "no native code" may be wrong.
-  Check the manifest for `split` attributes and `com.android.vending.splits.required`.
+  `triage.txt` has a "Split APK" section when the manifest requires splits
+  (`requiredSplitTypes`, `isSplitRequired`, `com.android.vending.splits.required`); for a
+  Flutter app it means the Dart code (`libapp.so`) is in the ABI split and not analyzable
+  from the base (4 MalEval samples).
 - **Code may be outside `classes*.dex`.** Flutter (`libapp.so`), React Native
   (`index.android.bundle`, often Hermes bytecode), Unity (IL2CPP in `libil2cpp.so`),
   Xamarin/.NET (assemblies blob). jadx then shows only the host shell; a clean-looking
