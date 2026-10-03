@@ -16,16 +16,23 @@ file when an item is done or new evidence moves it.
 
 ## Coverage gaps (largest effect)
 
-1. **Native decryption layers.** The agent decryption stage recovered all six
-   encrypted MalEval samples at least in part and raised behavior recall on them from
-   50% to 66%. What remains is native: Octo and Coper (same packer) decrypt their final
-   dex inside `libcyqcXW.so` with a key derived at run time (`make_AES_key`, `get_salt`).
-   Next steps: native-aware decryption prompts (Ghidra output of the unpack routine),
-   and turning the recurring schemes (DES-ECB with a constant key between zlib layers,
-   RC4 with a constant key, ZKM-style XOR string tables, AES-CBC with key and IV at the
-   call site) into a script that recognizes and decrypts them without an agent. Done
-   for constant-argument string decoders (`stringfog.py`: Base64+XOR and XOR, 5,032
-   strings on the BTMOB sample, where the agent's decryptor found 5,030); the payload schemes remain.
+1. **Decryption without an agent.** Payloads: done 2026-10-03 (`payload-decrypt.py`, run by
+   `unpack.sh`): constants of the APK tried as keys for DES, 3DES, AES, RC4, and XOR on
+   files that look encrypted, results kept only when they are code. MalEval: payloads in
+   29 of 230 malware samples and 0 of 25 benign apps (the agent stage had run on 6);
+   gate PASS, behavior signals up in 6 of 11 classes (Bank Stealing flow 24 to 37).
+   The native layer of Octo and Coper is not open any more: the decryption stage
+   decrypted it statically (RC4, key constants in `.rodata`); `make_AES_key` and
+   `get_salt` are run-time helpers outside the unpack path. Left:
+   - keys that are themselves encrypted strings (three of ZNIU's five DES payloads):
+     rerun the search with the plaintexts of `stringfog.py` and of the decryption stage;
+   - keys computed by code (BTMOB's stub: two constants XORed with the SHA-256 of the
+     package name; 67 MalEval samples have files that look encrypted and stay so);
+   - a set of split APKs comes out as separate children (base without dex, dex split),
+     not reassembled as one app;
+   - string tables: AES-CBC with key and IV at the call site (Rotexy) and ZKM-style XOR
+     tables (DoubleLocker) still need the decryption stage; `stringfog.py` covers
+     two-argument Base64+XOR and XOR decoders only.
 2. **Flows through R8-renamed libraries.** `flows.py` finds sources and sinks by API
    name, so when Room, DataStore, or OkHttp are renamed the path ends at an unnamed
    call (launcher A's screen-text-to-database finding is invisible to it). Next step:

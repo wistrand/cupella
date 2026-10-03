@@ -172,6 +172,14 @@ Agent stages added after these runs (2026-10-02):
   the decrypted outputs (`work/_maleval-agent/score-dec.txt`), same labels: behavior
   recall 50% -> 66%, precision 68% -> 74% on those six; Faketoken 0 -> 5 of 5 labeled
   behaviors. Octo and Coper stay blocked at the native third layer.
+- Payload decryption by script (`payload-decrypt.py`, 2026-10-03), no agent: 29 of 230
+  malware samples have a payload it decrypts (AES-128-ECB with a Base64 key 14, RC4 with
+  a string or byte-array key 10, a byte offset 10, zlib only 3, DES between zlib layers
+  2; some samples have two), 0 of 25 benign apps; 67 samples keep files that look
+  encrypted. With the decrypted children scanned, the scripted behavior signals rose:
+  Bank Stealing code 68 to 75 and flow 24 to 37, Privacy Stealing code 76 to 83,
+  SMS/CALL code 60 to 68, Premium Service code 7 to 14 (percent of labeled samples;
+  benign rates unchanged). The agent benchmark was not rerun.
 - Rule loop (`./cupella gate`): two agent-proposed rules from the vulnerable-app misses,
   "Secrets in resources" and "Cloud configuration", and a prompt-injection section,
   each passed the gate (82 metrics, none worse). AndroGoat's "Misconfigured Firebase

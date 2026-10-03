@@ -17,7 +17,7 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 |--------------------------|-------------------------------------------------------------------------|
 | `data/`                  | input APKs, read-only (mounted read-only in the container); any subdirectories; benchmark APKs in `data/ghera/`, `data/maleval/` (live malware), `data/vulnapps/`; gitignored |
 | `work/<name>/`           | derived output per APK, disposable, gitignored                          |
-| `work/<name>.emb<k>/`, `work/<name>.dec<k>/` | child samples: payloads found by content, and decrypted payloads |
+| `work/<name>.emb<k>/`, `work/<name>.dec<k>/` | child samples: payloads found by content or decrypted by script (`payload-decrypt.py`), and payloads decrypted by the decryption stage |
 | `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs, evidence bundles (`work/_evidence/<name>/`) |
 | `reports/<name>.md`      | the analysis report, the only authored output per sample                |
 | `scripts/`               | everything that runs in the container (mounted read-only)               |
@@ -51,6 +51,7 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `axml2xml.py`                 | binary XML to text, tolerant of tampered manifests; fallback when apktool fails |
 | `dexlist.py`                  | class names and string pool from dex files, no decompiler needed        |
 | `embedded.py`                 | finds dex and dex archives inside the APK by content                    |
+| `payload-decrypt.py`          | decrypts payloads whose key is a constant in the APK: tries DES, 3DES, AES, RC4, and XOR with every dex string, byte array, and native string on files that look encrypted, and keeps results that are a dex, a ZIP with dex, or an ELF; `unlocked/`, `unlocked.txt` (cipher, key, where the key is), `encrypted-left.txt` (not decrypted); run by `unpack.sh`, which unpacks the results as `.emb<k>` |
 | `manifest-summary.py`         | permissions, app flags, reachable components with filters, priorities, task attributes |
 | `apksig-verify.py`            | verifies v2/v3 signatures (via `openssl`) and v1 (via `jarsigner`)      |
 | `apksigblock.py`              | signer certificates from the v2/v3 signing block                        |

@@ -78,8 +78,11 @@ analysis, or when the answer needs more than a few cited lines.
 4. **Native code.** When `native-summary.txt` lists anything beyond known runtime
    libraries, follow [runbook-native.md](runbook-native.md), then rerun
    `./cupella structure-leads.py <name>` so the Ghidra output joins the call graph.
-5. **Decryption.** When the real code or its strings are encrypted (see "Malware
-   samples" in the runbook for the signs), run the decryption subagent below. After it,
+5. **Decryption.** Payloads whose key is a constant in the APK are already decrypted
+   (`triage.txt` "Encrypted payloads decrypted by script"; their children are
+   `work/<name>.emb<k>/`). When code or strings are still encrypted (see "Malware
+   samples" in the runbook for the signs; `triage.txt` "Files that look encrypted and
+   were not decrypted"), run the decryption subagent below. After it,
    repeat stages 3 and 4 on each new `work/<name>.dec<k>/`, which
    `run-decryptor.sh` has already unpacked and scanned. Repeat for each further layer.
 6. **Optional: model reading list.** Only when the user asked for it or a llav server is

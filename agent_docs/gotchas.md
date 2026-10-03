@@ -54,6 +54,11 @@ app, and malware is named by its public family (BTMOB, Octo).
   (`requiredSplitTypes`, `isSplitRequired`, `com.android.vending.splits.required`); for a
   Flutter app it means the Dart code (`libapp.so`) is in the ABI split and not analyzable
   from the base (4 MalEval samples).
+- **A script-decrypted payload and an agent-decrypted one can be the same file.**
+  `payload-decrypt.py` (since 2026-10-03) unpacks what it decrypts as `.emb<k>`; a sample
+  analyzed before that has the same payload as `.dec<k>` from the decryption stage
+  (Faketoken: identical sha256). Compare the `sha256:` lines of the children's
+  `triage.txt` before analyzing both, and cite one.
 - **Code may be outside `classes*.dex`.** Flutter (`libapp.so`), React Native
   (`index.android.bundle`, often Hermes bytecode), Unity (IL2CPP in `libil2cpp.so`),
   Xamarin/.NET (assemblies blob). jadx then shows only the host shell; a clean-looking

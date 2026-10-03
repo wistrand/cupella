@@ -342,6 +342,13 @@ What the MalEval runs (20 families, see [benchmarks.md](benchmarks.md)) showed:
   content", APKiD packers, high-entropy assets, and a manifest package with almost no
   classes all mean the logic is elsewhere: in `work/<name>.emb<k>/`, in another
   package (check the `scope:` line of `scan.txt`), or encrypted.
+- Payloads encrypted with a key that is a constant in the APK are decrypted by
+  `unpack.sh` (`payload-decrypt.py`): `triage.txt` "Encrypted payloads decrypted by
+  script" names each with its cipher, key, and where the key is, and the result is a
+  child `work/<name>.emb<k>/` like any embedded payload. On MalEval it decrypts payloads
+  in 29 of 230 malware samples and none of the 25 benign apps. The line is a lead: read
+  the code at the key's place before reporting how the payload is loaded. "Files that
+  look encrypted and were not decrypted" lists what is left for the decryption stage.
 - Encrypted payloads and string tables were the main cause of missed behaviors. Run
   the decryption stage ([workflow.md](workflow.md) "Subagent stages"): an
   agent with the `decryptor` role and `prompts/decrypt.md` finds the routine (a "[XOR or cipher on the way]" flow from an asset, a decoder in

@@ -20,13 +20,15 @@ accumulated method; a one-off shell pipeline in a session is lost.
 ```
 data/<name>.apk
    |  ./cupella unpack.sh              (apkunzip.py under size limits, fallback decoders, apktool, jadx,
-   |                                embedded payloads, signatures, APKiD, trackers)
+   |                                embedded payloads, payloads encrypted with a constant
+   |                                key, signatures, APKiD, trackers)
    v
 work/<name>/  triage.txt, manifest-summary.txt, native-summary.txt, apkid.txt,
               trackers.txt, flutter-summary.txt and dart/ (Flutter), hermes/ (React
-              Native), raw/, apktool/, jadx/, dex/, sig/, embedded.txt,
-              zip-anomalies.txt (malformed ZIP only)
-work/<name>.emb<k>/  each payload found inside the APK, unpacked as a sample
+              Native), raw/, apktool/, jadx/, dex/, sig/, embedded.txt, unlocked.txt,
+              encrypted-left.txt, zip-anomalies.txt (malformed ZIP only)
+work/<name>.emb<k>/  each payload found inside the APK or decrypted by script, unpacked
+              as a sample
               (work/_reference/ caches downloads of reference-check.py)
    |  ./cupella scan.sh                (pattern searches over the app's packages)
    v
@@ -40,8 +42,9 @@ work/<name>/jadx-retry/            methods jadx failed on, in simple mode
 reports/<name>.md
 ```
 
-`<name>` is the APK filename without `.apk`. Payloads found inside an APK and
-decrypted payloads become child samples `work/<name>.emb<k>/` and `work/<name>.dec<k>/`.
+`<name>` is the APK filename without `.apk`. Payloads found inside an APK, or decrypted by
+`payload-decrypt.py` with a key that is a constant in it, become child samples
+`work/<name>.emb<k>/`; payloads decrypted by the decryption stage become `work/<name>.dec<k>/`.
 
 Every script runs inside a container through `./cupella <script> [args]`: pinned tools,
 no network (two documented exceptions), `scripts/` and `data/` read-only. The agent

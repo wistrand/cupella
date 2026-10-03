@@ -141,6 +141,29 @@ with zipfile.ZipFile(sys.argv[2], "w") as z, open(sys.argv[1], "rb") as f:
     "$root/scripts/unpack.sh" ${fflag[@]+"${fflag[@]}"} "$out/embedded/$child.apk" > "$out/embedded/$child.unpack.log" 2>&1 < /dev/null \
       || echo "unpack of embedded $rel failed, see embedded/$child.unpack.log"
   done < "$out/embedded.list"
+  # encrypted payloads whose key is a constant in the APK: payload-decrypt.py tries the
+  # common ciphers and keeps what turns out to be code. Each dex or APK result becomes a
+  # child like the ones above; unlocked.txt has the cipher, the key, and where it is.
+  timed payload-decrypt python3 "$root/scripts/payload-decrypt.py" "$name" || echo "payload-decrypt failed or timed out"
+  while IFS=$'\t' read -r file kind size source layers _rest; do
+    case "$kind" in dex*|zip*) ;; *) continue ;; esac
+    k=$((k + 1))
+    [ "$k" -le 20 ] || { echo "more than 20 embedded containers; the rest are in unlocked/ only"; break; }
+    child="$name.emb$k"
+    mkdir -p "$out/embedded"
+    if [ "${kind#dex}" != "$kind" ]; then
+      python3 -c 'import sys, zipfile
+with zipfile.ZipFile(sys.argv[2], "w") as z, open(sys.argv[1], "rb") as f:
+  z.writestr(zipfile.ZipInfo("classes.dex", (1980, 1, 1, 0, 0, 0)), f.read())' \
+        "$out/unlocked/$file" "$out/embedded/$child.apk" < /dev/null || { echo "could not wrap unlocked/$file"; continue; }
+    else
+      cp "$out/unlocked/$file" "$out/embedded/$child.apk"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$child" "$kind" "$size" "unlocked/$file" "decrypted by script from $source ($layers)" >> "$out/embedded.txt"
+    echo "== decrypted $source ($kind): unpacking as $child"
+    "$root/scripts/unpack.sh" ${fflag[@]+"${fflag[@]}"} "$out/embedded/$child.apk" > "$out/embedded/$child.unpack.log" 2>&1 < /dev/null \
+      || echo "unpack of unlocked/$file failed, see embedded/$child.unpack.log"
+  done < <(cat "$out/unlocked.txt" 2>/dev/null)
 fi
 if [ "$force" = 1 ]; then
   # children from an earlier run that this run did not produce (numbered above the new
@@ -268,6 +291,21 @@ sweep_links
   echo "## Embedded code found by content (each unpacked as work/<child>/; scan.sh scans them)"
   [ -s "$out/embedded.txt" ] && cat "$out/embedded.txt" || echo "none"
   echo
+  if [ -s "$out/unlocked.txt" ]; then
+    echo "## Encrypted payloads decrypted by script (unlocked.txt; the key is a constant in the APK)"
+    echo "result in unlocked/, kind, source under raw/, layers, key, where the key is. A finding once the"
+    echo "code that uses the key is read; the decryption stage need not redo these."
+    awk -F'\t' '{ key = ($7 != "") ? "\"" $7 "\"" : ($6 != "" ? "0x" $6 : "none"); printf "- %s  %s  from %s  %s  key %s  %s\n", $1, $2, $4, $5, key, $8 }' "$out/unlocked.txt"
+    echo
+  fi
+  if [ -s "$out/encrypted-left.txt" ]; then
+    echo "## Files that look encrypted and were not decrypted by script ($(wc -l < "$out/encrypted-left.txt"); encrypted-left.txt)"
+    echo "No known format, high entropy, and no constant in the APK decrypts them to code with a common"
+    echo "cipher: an encrypted payload whose key is computed, encrypted data that is not code, or just"
+    echo "compressed data. Leads for the decryption stage, largest first."
+    head -n 10 "$out/encrypted-left.txt" | awk -F'\t' '{ printf "- %s  %d bytes, entropy %s%s\n", $1, $2, $3, ($4 != "" ? " after " $4 : "") }'
+    echo
+  fi
   echo "## Embedded archives and code outside classes*.dex, by file name"
   find "$out/raw" -type f \( -name '*.apk' -o -name '*.dex' -o -name '*.jar' -o -name '*.zip' \) \
     ! -path "$out/raw/classes*.dex" | sed "s#$out/raw/##" || true
