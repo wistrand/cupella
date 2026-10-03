@@ -104,7 +104,16 @@ function validPath(f) {
   // drops any href/src that fails it: no scheme, no "//" or backslash host forms. That
   // covers links and images alike; only relative URLs within this site survive.
   const RELATIVE_ONLY = /^(?![a-z][a-z0-9+.\-]*:)(?![\/\\]{2})(?!\/\\)(?!\\)/i;
-  out.innerHTML = DOMPurify.sanitize(marked.parse(text), { ALLOWED_URI_REGEXP: RELATIVE_ONLY });
+  // Only the tags and attributes markdown produces: no <style>, style=, images, media,
+  // or srcset, so CSS url(...) and image sources cannot fetch anything either.
+  const SAFE = {
+    ALLOWED_URI_REGEXP: RELATIVE_ONLY,
+    ALLOWED_TAGS: ["h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr", "ul", "ol", "li", "a", "code",
+                   "pre", "strong", "em", "del", "blockquote", "table", "thead", "tbody", "tr", "th",
+                   "td", "span", "div"],
+    ALLOWED_ATTR: ["href", "title", "class", "align", "start", "id"],
+  };
+  out.innerHTML = DOMPurify.sanitize(marked.parse(text), SAFE);
   // relative links: files under examples/ open in this page, a directory link opens its
   // README.md; anything else becomes plain text
   out.querySelectorAll("a[href]").forEach(a => {

@@ -16,7 +16,8 @@ importlib, pickle, marshal, ...); exec, eval, compile, __import__, getattr/setat
 os.system/exec*/spawn*/popen/fork/kill; links, chmod, and copying file modes; any
 dunder attribute or name other than __init__, __name__, __file__, __doc__ (no
 __dict__, __class__, __builtins__, __subclasses__); operator (attrgetter and
-methodcaller reach attributes without an attribute node); sys.path, sys.modules and
+methodcaller reach attributes without an attribute node); string.Formatter and
+get_field (the same, through format fields); sys.path, sys.modules and
 the import hooks; `from <module> import <banned name>`; aliasing sys; relative imports;
 string literals that are paths under /proc/ or /dev/.
 
@@ -44,8 +45,9 @@ ALLOWED_MODULES = {
 ALLOWED_ROOTS = {"Cryptodome"}
 BANNED_NAMES = {"exec", "eval", "compile", "__import__", "globals", "locals", "vars", "breakpoint", "input",
                 "getattr", "setattr", "delattr",
-                # attribute access without an Attribute node (operator is not allowed either)
-                "attrgetter", "methodcaller"}
+                # attribute access without an Attribute node (operator is not allowed either;
+                # string stays for its constants, but Formatter.get_field returns attributes)
+                "attrgetter", "methodcaller", "Formatter", "get_field"}
 BANNED_ATTRS = {
   # processes
   "system", "popen", "execv", "execve", "execvp", "execvpe", "execl", "execle", "execlp", "execlpe",
@@ -56,6 +58,8 @@ BANNED_ATTRS = {
   "copymode", "copystat", "chroot",
   # the import machinery
   "modules", "meta_path", "path_hooks", "path_importer_cache",
+  # attribute access through format fields (string.Formatter().get_field("0.system", ...))
+  "Formatter", "get_field",
   # frames and code objects
   "_getframe", "f_globals", "f_locals", "f_builtins", "gi_frame", "cr_frame", "tb_frame", "mro",
 }

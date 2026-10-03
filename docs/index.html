@@ -123,7 +123,7 @@
   <ul class="plain">
     <li><strong>In the container, on your machine, offline:</strong> unpacking, decompiling, scanning, and running decryptors. Nothing here reaches a network.</li>
     <li><strong>On your machine, outside the container:</strong> the coding agent. It reads the scripts' output under <code>work/</code>: decompiled code, decoded strings, and summaries of the sample.</li>
-    <li><strong>At your model provider:</strong> whatever the agent reads is sent to the model behind it, including excerpts of the decompiled code. Do not analyze code you may not send to that provider, or use a harness with a local model.</li>
+    <li><strong>At your model provider:</strong> whatever the agent reads is sent to the model behind it, including excerpts of the decompiled code. Do not analyze code you may not send to that provider. A harness running a local model would keep it on your machine, but no local-model harness has been tested with Cupella.</li>
   </ul>
   <h3>Protections</h3>
   <ul class="plain">
