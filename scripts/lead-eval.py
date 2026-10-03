@@ -3,7 +3,7 @@
 
 The report's Findings name the code they rest on (Java files and lines, methods,
 native and Dart functions). Those functions are the answer key. For each lead
-source (scan.txt, structure-leads.txt, flows.txt, model-leads.txt) this script checks
+source (scan.txt, structure-leads.txt, flows.txt, quark-leads.txt, model-leads.txt) this script checks
 which findings the source pointed at, and how far down its list the first pointer was.
 
   covered   a lead names a function cited by the finding (or, for a finding that
@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import units  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-SOURCES = ("scan.txt", "structure-leads.txt", "flows.txt", "model-leads.txt")
+SOURCES = ("scan.txt", "structure-leads.txt", "flows.txt", "quark-leads.txt", "model-leads.txt")
 
 
 class Index:

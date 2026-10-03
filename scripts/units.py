@@ -41,15 +41,26 @@ JAVA_CLASS = re.compile(r"^\s*(?:(?:public|private|protected|static|final|abstra
                         r"(?:class|interface|enum|@interface|record)\s+([\w$]+)")
 JAVA_RENAMED = re.compile(r"/\* JADX INFO: renamed from: ([^,\s]+), reason")
 JAVA_RUN = ("run", "call", "invoke", "handleMessage", "doWork", "onReceive", "accept", "apply", "invokeSuspend")
+# calls that hand a Runnable, Callable, or Message to another thread or a looper
+SCHEDULE = re.compile(r"->(post|postDelayed|postAtTime|postAtFrontOfQueue|postOnAnimation|sendMessage|"
+                      r"sendMessageDelayed|sendMessageAtTime|sendMessageAtFrontOfQueue|sendEmptyMessage|"
+                      r"sendEmptyMessageDelayed|sendEmptyMessageAtTime|execute|submit|schedule|"
+                      r"scheduleAtFixedRate|scheduleWithFixedDelay|runOnUiThread)\(")
+ASYNC_BASES = {"Ljava/lang/Runnable;", "Ljava/lang/Thread;", "Landroid/os/Handler;", "Landroid/os/Handler$Callback;",
+               "Ljava/util/concurrent/Callable;", "Ljava/util/TimerTask;"}
 
 
 class Unit:
-  __slots__ = ("kind", "id", "where", "file", "start", "end", "name", "cls", "lines", "calls", "ext", "refs", "addr", "meta", "inner", "bname")
+  __slots__ = ("kind", "id", "where", "file", "start", "end", "name", "cls", "lines", "calls", "ext", "refs", "addr", "meta", "inner", "bname",
+               "async_")
 
   def __init__(self, kind, uid, where, file, start, end, name, cls, lines):
     self.kind, self.id, self.where, self.file = kind, uid, where, file
     self.start, self.end, self.name, self.cls, self.lines = start, end, name, cls, lines
     self.calls, self.ext, self.refs, self.addr, self.meta, self.inner, self.bname = set(), set(), set(), None, None, "", ""
+    # Runnables and Handlers this function hands to another thread or a looper (Java):
+    # kept apart from calls, so structure-leads.py's chains and budgets do not change
+    self.async_ = set()
 
   @property
   def text(self):
@@ -266,6 +277,13 @@ def _java_calls_from_dex(work, scopes, units):
   for key, m in methods.items():
     by_cls.setdefault(m.cls, []).append(key)
 
+  def schedules(k):
+    """a call that hands work to another thread or a looper (Thread.start only on a Thread)"""
+    cls, rest = k.split("->", 1)
+    if rest.startswith("start()"):
+      return cls == "Ljava/lang/Thread;" or "Ljava/lang/Thread;" in anc.get(cls, ())
+    return bool(SCHEDULE.search(k))
+
   def expand(key, seen, depth):
     """units and external APIs reached from method key, folding in methods without units"""
     found, ext = set(), set()
@@ -317,6 +335,18 @@ def _java_calls_from_dex(work, scopes, units):
       found, ext = expand(key, {key}, 0)
       u.calls |= found - {u.id}
       u.ext |= ext
+      m = methods[key]
+      if any(schedules(k) for k in m.invokes):
+        # a Runnable or Handler held in a field (or this object) handed to another thread
+        # or a looper: its run or handleMessage runs later on its behalf. Only classes
+        # whose ancestors include a Runnable, Thread, Handler, Callable, or TimerTask.
+        for t in dict.fromkeys(m.fields + [m.cls]):
+          if t in by_cls and anc.get(t, set()) & ASYNC_BASES:
+            for k in by_cls[t]:
+              if methods[k].name in JAVA_RUN:
+                us = units_for(k)
+                found = {x.id for x in us} if us else expand(k, {k}, 1)[0]
+                u.async_ |= found - {u.id}
   return True
 
 
@@ -390,6 +420,13 @@ def native_units(work):
           elif c not in here and c not in C_NOT_CALLS and not re.match(r"^(FUN|LAB|DAT|PTR|SUB|code|undefined\d*|"
                                                                         r"u?int|char|byte|bool|long|short|ushort|uint)", c):
             u.ext.add(c)
+        # a literal-pool annotation (postprocess.py) whose word is used as an offset
+        # (base + DAT_x) is a chance match, not a reference: Ghidra output written before
+        # postprocess.py skipped those still has them
+        offsets = set(re.findall(r"[-+]\s*\(?\w*\)?\s*(DAT_[0-9a-f]{8})\b", body)) | \
+            set(re.findall(r"\b(DAT_[0-9a-f]{8})\s*(?:/\*[^*]*\*/\s*)?[-+]", body))
+        body = re.sub(r"\b(DAT_[0-9a-f]{8}) /\* -> &\w+ \*/",
+                      lambda mo: mo.group(1) if mo.group(1) in offsets else mo.group(0), body)
         for m in re.finditer(r"&(\w+)|\b(FUN_[0-9a-f]+|jni_\w+|init_\d+)\b(?!\s*\()", body):
           c = m.group(1) or m.group(2)
           if c in here and here[c] is not u:
@@ -397,11 +434,12 @@ def native_units(work):
   return units
 
 
-def callers_of(units):
+def callers_of(units, with_async=False):
+  """callers per unit id; with_async also counts Runnables and Handlers handed over (async_)"""
   by_id = {u.id: u for u in units}
   callers = {u.id: set() for u in units}
   for u in units:
-    for c in u.calls | u.refs:
+    for c in u.calls | u.refs | (u.async_ if with_async else set()):
       if c in callers:
         callers[c].add(u.id)
   return by_id, callers

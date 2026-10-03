@@ -73,7 +73,7 @@ def main():
     print("(target outside the scan scope: added %s/)" % m.group(1), file=sys.stderr)
     allu = units.java_units(work, scopes) + units.dart_units(work, name) + units.native_units(work)
     hits = xref.find(allu, q)
-  by_id, callers = units.callers_of(allu)
+  by_id, callers = units.callers_of(allu, with_async=True)
   if not hits:
     sys.exit("no function matches %s (Java scope: %s)" % (q, " ".join(scopes)))
   if len(hits) > 1:
@@ -124,7 +124,7 @@ def main():
       return True
     if depth == 0:
       return False
-    for cid in u.calls | u.refs:
+    for cid in u.calls | u.refs | u.async_:
       if cid in by_id and cid not in seen:
         seen.add(cid)
         if leads_to_cap(by_id[cid], depth - 1, seen):
@@ -132,12 +132,12 @@ def main():
     return False
 
   frontier, n_callees, reached = [target], 0, {target.id}
-  few = len([c for c in target.calls | target.refs if c in by_id]) <= FEW_CALLEES
+  few = len([c for c in target.calls | target.refs | target.async_ if c in by_id]) <= FEW_CALLEES
   cut = False
   for level in range(down):
     nxt = []
     for v in frontier:
-      for cid in sorted(v.calls | v.refs):
+      for cid in sorted(v.calls | v.refs | v.async_):
         if cid not in by_id:
           continue
         w = by_id[cid]
@@ -168,7 +168,11 @@ def main():
     else:
       lines.append('  %s["%s"]' % (ids[uid], text))
   for a, b in sorted(edges):
-    lines.append("  %s --> %s" % (ids[a], ids[b]))
+    u = nodes[a]
+    if b in u.async_ and b not in u.calls | u.refs:
+      lines.append("  %s -. later .-> %s" % (ids[a], ids[b]))  # handed to a thread or looper
+    else:
+      lines.append("  %s --> %s" % (ids[a], ids[b]))
   # capabilities as end nodes, for the target and its callees
   for uid in sorted(reached, key=lambda x: ids[x]):
     u = nodes[uid]
@@ -181,14 +185,17 @@ def main():
 
   out = ["# Behavior map: %s" % label(xref.short(target)), ""]
   out.append("Callers up to %d levels (entry points rounded), direct callees, deeper callees on a path to a capability, up to %d levels." % (up, down))
-  out.append("Calls through reflection, native pointers, or loaded code are not in the graph.")
+  out.append("Calls through reflection, native pointers, or loaded code are not in the graph. A dotted")
+  out.append("\"later\" edge is a Runnable or Handler held in a field or the object itself, handed to a")
+  out.append("thread, executor, or looper by that function: check in the code that it is that object.")
   out.append("")
   out += lines
   out.append("")
   out.append("Nodes (cite these):")
   for uid, u in nodes.items():
     why = entry(u)
-    out.append("- `%s`%s%s" % (u.where.split(" ")[0], "  (target)" if uid == target.id else "",
+    cite = u.where.split(" ")[0] if u.kind == "java" else "%s` `%s" % (u.file, u.name)
+    out.append("- `%s`%s%s" % (cite, "  (target)" if uid == target.id else "",
                                 "  (entry point: %s)" % label(why) if why else ""))
   if cut or cut_up:
     out.append("")

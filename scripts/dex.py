@@ -42,13 +42,14 @@ INVOKE = set(range(0x6e, 0x73)) | set(range(0x74, 0x79)) | {0xfa, 0xfb}
 
 class Method:
   __slots__ = ("cls", "name", "params", "ret", "code", "invokes", "strings", "news", "dex", "code_off",
-               "new_consts", "cases")
+               "new_consts", "cases", "fields")
 
   def __init__(self, cls, name, params, ret):
     self.cls, self.name, self.params, self.ret, self.code = cls, name, params, ret, False
     self.dex, self.code_off = None, 0  # for decoders that need the instructions again
     self.invokes, self.strings, self.news = [], [], []
     self.new_consts, self.cases = [], {}
+    self.fields = []  # types of object fields read (iget-object, sget-object)
 
 
 class DexError(ValueError, IndexError, struct.error):
@@ -184,6 +185,8 @@ class Dex:
     consts = {}      # register -> int literal last loaded into it (straight-line approximation)
     invoke_at = {}   # pc -> invoked method key, for the case bodies below
     switch = None    # (pc, payload pc) of the first packed or sparse switch
+    disc = None      # (pc, payload pc) of the first switch on an int field of this class
+    ifield = {}      # register -> True when last loaded by iget of this class's int field
     while pc < n:
       unit = struct.unpack_from("<H", b, base + 2 * pc)[0]
       op = unit & 0xFF
@@ -225,20 +228,32 @@ class Dex:
         consts[unit >> 8] = struct.unpack_from("<h", b, base + 2 * pc + 2)[0]
       elif op == 0x14:  # const vAA, #+BBBBBBBB
         consts[unit >> 8] = struct.unpack_from("<i", b, base + 2 * pc + 2)[0]
-      elif op in (0x2b, 0x2c) and switch is None:
-        switch = (pc, pc + struct.unpack_from("<i", b, base + 2 * pc + 2)[0])
+      elif op == 0x52:  # iget vA, vB, field: R8's merged lambdas switch on such a field
+        fidx = struct.unpack_from("<H", b, base + 2 * pc + 2)[0]
+        own = self.type(struct.unpack_from("<H", b, self.f_off + 8 * fidx)[0]) == m.cls
+        ifield[(unit >> 8) & 0xF] = own and self.type(struct.unpack_from("<H", b, self.f_off + 8 * fidx + 2)[0]) == "I"
+      elif op in (0x2b, 0x2c):
+        here = (pc, pc + struct.unpack_from("<i", b, base + 2 * pc + 2)[0])
+        if switch is None:
+          switch = here
+        if disc is None and ifield.get(unit >> 8):
+          disc = here
       elif op == 0x1a:
         m.strings.append(self.string(struct.unpack_from("<H", b, base + 2 * pc + 2)[0]))
       elif op == 0x1b:
         m.strings.append(self.string(struct.unpack_from("<I", b, base + 2 * pc + 2)[0]))
       elif op == 0x22:
         m.news.append(self.type(struct.unpack_from("<H", b, base + 2 * pc + 2)[0]))
-      elif op == 0x62:  # sget-object: the field's class
+      elif op == 0x62:  # sget-object: the field's class, and its type
         fidx = struct.unpack_from("<H", b, base + 2 * pc + 2)[0]
         m.news.append(self.type(struct.unpack_from("<H", b, self.f_off + 8 * fidx)[0]))
+        m.fields.append(self.type(struct.unpack_from("<H", b, self.f_off + 8 * fidx + 2)[0]))
+      elif op == 0x54:  # iget-object vA, vB, field: its type (a Runnable or Handler held in a field)
+        fidx = struct.unpack_from("<H", b, base + 2 * pc + 2)[0]
+        m.fields.append(self.type(struct.unpack_from("<H", b, self.f_off + 8 * fidx + 2)[0]))
       pc += WIDTH[op]
-    if switch:
-      m.cases = self._cases(b, base, n, switch, invoke_at)
+    if disc or switch:
+      m.cases = self._cases(b, base, n, disc or switch, invoke_at)
 
   def _cases(self, b, base, n, switch, invoke_at):
     """{case value: [invoked method keys]} for one switch: each case body is read from its

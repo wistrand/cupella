@@ -33,6 +33,7 @@ work/<name>.emb<k>/  each payload found inside the APK, unpacked as a sample
 work/<name>/scan.txt               leads (text patterns)
 work/<name>/structure-leads.txt    leads (call graph, control structure)
 work/<name>/flows.txt              leads (source-to-sink data flows)
+work/<name>/quark-leads.txt        leads (Quark-Engine rule matches by method)
 work/<name>/jadx-retry/            methods jadx failed on, in simple mode
    |  agent reads the code behind the leads
    v

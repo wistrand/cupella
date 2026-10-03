@@ -12,6 +12,9 @@ Usage: ./cupella xref.py <name> <query> [--depth N] [--scope path ...]
   --depth  levels of callers and callees to show (default 1, at most 3)
   --scope  Java scope under jadx/sources (default: scope.py)
 Output: stdout. Callers marked <-, callees ->, external API calls (Java) as "calls".
+Runnables and Handlers held in a field or the object itself and handed to a thread,
+executor, or looper: "=> later" (this function hands them over), "<= later" (who hands
+this one over). Check in the code that it is that object.
 """
 import os
 import re
@@ -64,6 +67,10 @@ def main():
   scopes = scopes or units.load_script("scope.py").scopes(work)
   allu = units.java_units(work, scopes) + units.dart_units(work, name) + units.native_units(work)
   by_id, callers = units.callers_of(allu)
+  handed_by = {}
+  for v in allu:
+    for c in v.async_:
+      handed_by.setdefault(c, set()).add(v.id)
   hits = find(allu, q)
   if not hits:
     sys.exit("no function matches %s (Java scope: %s)" % (q, " ".join(scopes)))
@@ -82,6 +89,9 @@ def main():
     print("%s  %s" % (short(u), u.where))
     tree(u, lambda x: callers.get(x.id, ()), "<-", 1, {u.id})
     tree(u, lambda x: x.calls | x.refs, "->", 1, {u.id})
+    # Runnables and Handlers it hands to a thread or looper, and who hands this one over
+    tree(u, lambda x: x.async_ - x.calls - x.refs, "=> later", 1, {u.id})
+    tree(u, lambda x: handed_by.get(x.id, ()), "<= later", 1, {u.id})
     ext = sorted(u.ext)
     if ext:
       print("  calls: %s%s" % (", ".join(ext[:25]), " ... +%d" % (len(ext) - 25) if len(ext) > 25 else ""))

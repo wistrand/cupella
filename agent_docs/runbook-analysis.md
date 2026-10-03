@@ -10,6 +10,7 @@
 - Vulnerability checklist
 - Structure leads
 - Data flows
+- Quark leads
 - Malware samples
 - Stage 4: native libraries
 - React Native apps
@@ -310,6 +311,19 @@ method, and descriptor. A rule file only names APIs; it is data, not code, so wr
 is allowed under the invariants. The output marks literals that are hardcoded in the APK.
 Quark reads the outer APK only (`repaired.apk` when unpacking made one), not embedded
 or decrypted payloads.
+
+## Quark leads
+
+`scan.sh` also writes `quark-leads.txt`: methods where a rule of Quark-Engine's pinned
+rule set matched at 80% or 100% confidence (two API calls in one method; at 100%, data
+passing between them), app scope first, each with the rule's description and labels.
+On MalEval it named 5 of 60 functions the reports cited that no other lead file named,
+and in app scope it fired on none of the 5 benign apps; outside app scope it fires on
+most apps through library code ([benchmarks.md](benchmarks.md) "Quark leads as a lead
+source"). Read its app-scope lines after the other lead files and look for methods
+they did not name. Quark reads the APK's own dex (`repaired.apk` when unpacking made
+one); each embedded or decrypted child gets its own run. A file that says "no Quark
+result" means the run failed or timed out, not that nothing matched.
 
 ## Malware samples
 

@@ -69,7 +69,8 @@ analysis, or when the answer needs more than a few cited lines.
    here; read such code in `jadx-strings/`.
 3. **Read the leads.** In order: injection section of `scan.txt` (anything there is a
    finding), "Known family markers", entry points and environment checks in
-   `structure-leads.txt`, `flows.txt`, then `scan.txt` section by section. Read the code
+   `structure-leads.txt`, `flows.txt`, `scan.txt` section by section, then the app-scope
+   lines of `quark-leads.txt` that no other source named. Read the code
    behind every lead you report. Use `./cupella xref.py` for callers and callees, and
    `./cupella dex-disasm.py` where jadx failed. Before reporting a feature, check its gate:
    the "Permissions the code names but the manifest does not request" and "Native

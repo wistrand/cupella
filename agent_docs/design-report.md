@@ -108,10 +108,15 @@ handler that reaches SMS sending), not for single-function findings. The map sho
 what the call graph contains; reflection, native calls, and dynamically loaded code do
 not appear in it, so say when the chain was completed by reading. In R8-obfuscated code
 check each edge in the source before using a map: merged lambda classes create false
-edges ([gotchas.md](gotchas.md)). Handler posts and new threads are not edges in the graph;
-add them by hand and label them (`-->|Handler.post, read|`). In Ghidra output, callers
-inside the static libc region are often literal-pool words, not calls. Say above the
-block what was removed and added.
+edges ([gotchas.md](gotchas.md)). A Runnable or Handler held in a field (or the object
+itself) and handed to `Handler.post`, `sendMessage`, an executor, or `Thread.start` is a
+dotted `later` edge; check in the code that the posted object is that one. One created
+with `new` at the call is an ordinary edge. Other hand-offs (a Runnable passed in as a
+parameter, a listener registered with a library) are not edges; add them by hand and
+label them (`-->|Handler.post, read|`). Literal-pool words used as offsets (`base +
+DAT_...`) no longer produce native callers; other literal-pool references can still be
+chance matches, so check native callers in the Ghidra output. Say above the block what
+was removed and added.
 
 ## Evidence rules
 

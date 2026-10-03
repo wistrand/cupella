@@ -353,10 +353,27 @@ app, and malware is named by its public family (BTMOB, Octo).
   `xref.py`, `structure-leads.py`, and `behavior-map.py` showed callees the code does not
   reach (an activity's `onCreate` "calling" a content provider's `call`). Since
   2026-10-03 `dex.py` records constant constructor arguments and the calls in each case,
-  and `units.py` follows only the case whose label matches. Left: a case body is read up
-  to the next return, throw, or goto, and only a method's first switch is used, so an
-  odd edge can remain (launcher B: `sm/n` case 9 still reaches `NamedIntent`). Check an edge in
+  and `units.py` follows only the case whose label matches, using the switch on an int
+  field of the class itself (the lambda number) when the method has one, else its first
+  switch. A case body is read up to the next return, throw, or goto. Following it
+  through gotos and branches instead was tried (2026-10-03) and reverted: launcher B's
+  `NovaMobileActivity.onCreate` gained 16 callees, several wrong (Stripe activities'
+  `finish`), and `structure-leads.txt` lost one of the report's 12 findings. So an odd
+  edge can remain, and a case's calls after a branch can be missing. Check an edge in
   the source before relying on it in obfuscated code.
+- **Ghidra literal-pool words used as offsets are not pointers (verified, fixed).** In
+  32-bit position-independent code Ghidra shows `base + DAT_x`, where the pool word is an
+  offset. `postprocess.py` annotated any pool word whose value equaled a function
+  address (`/* -> &FUN_... */`), and `units.py` made each annotation a caller: in the
+  DDoS-bot sample six functions "called" `FUN_00008b94` that way. Since 2026-10-03 a word
+  used in addition or subtraction gets no annotation, and `units.py` ignores such
+  annotations in older output.
+- **More edges can lose findings in `structure-leads.txt` (verified).** Its sections
+  have budgets and pick one chain per capability, so adding true edges changes which
+  functions are listed. Linking Handler posts and thread starts into the call graph cost
+  launcher B one of 12 findings; those edges are kept apart (`Unit.async_`) and shown
+  only by `behavior-map.py` and `xref.py`. Measure any call graph change with
+  `./cupella lead-eval.py` on the analyzed apps before keeping it.
 - **A `defpackage` scope decodes every class (verified, kept on purpose).** In
   `units.py` a scope that includes `defpackage` adds the prefix `L`, which matches all
   classes, so the call graph covers library code too for those samples. Narrowing it to

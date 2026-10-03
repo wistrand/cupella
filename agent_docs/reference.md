@@ -84,13 +84,14 @@ On demand:
 | `decryptor-lint.py`           | rejects decryptors that could run code or reach the network             |
 | `cite-check.py`               | checks a report's citations against `work/`                             |
 | `lead-eval.py`                | scores lead files against the functions a report's Findings cite        |
-| `quark-leads.py`              | Quark-Engine matches (80%/100%, by calling method) as `quark-leads.txt`, app scope first; needs `tools/quark.json` from `quark-scan.sh` |
+| `quark-scan.sh`               | runs Quark-Engine on a sample (`-n <name>`: `repaired.apk` when present) or APK paths; result cached in `tools/quark.json` (`tools/quark.failed` after a failure; `-f` reruns); `scan.sh` runs it |
+| `quark-leads.py`              | Quark-Engine matches (80%/100%, by calling method) as `quark-leads.txt`, app scope first; `scan.sh` runs it |
 | `model-leads.py`              | optional local-model reading list (`model-leads.txt`)                   |
 | `blutter-build.sh`            | builds blutter for one Dart version; called by `./cupella` when needed      |
 
 Benchmarks ([benchmarks.md](benchmarks.md)): `fix-eval.py`, `bench-maleval.py`,
 `bench-maleval-agent.py`, `bench-ghera-blind.py`, `bench-ghera-score.py`; tool
-comparison: `quark-scan.sh` (Quark-Engine in the image), `bench-quark-leads.py` (Quark leads vs. the existing leads on MalEval), `mobsf-scan.py` (runs in
+comparison: `bench-quark-leads.py` (Quark leads vs. the existing leads on MalEval), `mobsf-scan.py` (runs in
 MobSF's own pinned image, offline; `./cupella` gives it our jadx through `cache/`),
 `bench-tools.py` (APK lists, tool findings to verdicts).
 

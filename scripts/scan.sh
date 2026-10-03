@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Workflow stage 2: pattern searches over decompiled sources. Every hit is a lead to
 # read, not a finding. Writes work/<name>/scan.txt, then runs jadx-retry.sh,
-# structure-leads.py, and flows.py for the same scope.
+# structure-leads.py, flows.py, and Quark (quark-scan.sh, quark-leads.py) for the same scope.
 #
 # Usage: scripts/scan.sh <name> [source-subdir ... | --default-scope]
 #   <name>         APK name without .apk (work/<name>/ must exist, see unpack.sh)
@@ -178,6 +178,20 @@ fi
 echo "wrote work/$name/scan.txt ($(wc -l < "$out/scan.txt") lines)"
 timeout "${APK_TOOL_TIMEOUT:-1800}" python3 "$root/scripts/structure-leads.py" "$name" "${scopes[@]}" || echo "structure-leads failed or timed out"
 timeout "${APK_TOOL_TIMEOUT:-1800}" python3 "$root/scripts/flows.py" "$name" "${scopes[@]}" || echo "flows failed or timed out"
+# Quark-Engine rule matches by calling method (quark-leads.txt). The Quark run is cached
+# in tools/ (same APK, same pinned rules): only the first scan of a sample pays for it.
+if [ -n "${APK_TOOLS:-}" ]; then
+  "$root/scripts/quark-scan.sh" -n "$name" || echo "quark-scan failed"
+  if [ -s "$out/tools/quark.json" ]; then
+    python3 "$root/scripts/quark-leads.py" "$name" "${scopes[@]}" || echo "quark-leads failed"
+  else
+    printf '# Quark leads: %s
+# no Quark result (%s): no leads from this source, which says nothing about the app.
+' \
+      "$name" "$(cat "$out/tools/quark.failed" 2>/dev/null || echo "Quark did not run")" > "$out/quark-leads.txt"
+    echo "wrote work/$name/quark-leads.txt (no Quark result)"
+  fi
+fi
 for e in "${embedded[@]}"; do
   echo "== embedded payload $e"
   "$0" "$e" | tail -n 3 || echo "scan of $e failed"

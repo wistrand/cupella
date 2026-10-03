@@ -155,13 +155,13 @@ From the agent benchmarks; each is small and testable on the same samples.
 - **Tool comparison on the same samples.** Done for MobSF and Quark-Engine (see
   [benchmarks.md](benchmarks.md), "Tool comparison"). Not yet on the vulnerable apps
   (InsecureBankv2 and others) or the full MalEval set.
-- **Quark leads in the pipeline.** Measured as a lead source ([benchmarks.md](benchmarks.md),
-  "Quark leads as a lead source"): 5 more of 60 cited functions, no benign hits in app
-  scope. Next: have `scan.sh` run Quark (on `repaired.apk` when present, so malformed ZIPs
-  do not crash it) and write `quark-leads.txt`, add it to `lead-eval.py`'s sources and
-  the runbook's lead order, and keep it only on a gate PASS. Quark Script's CWE detectors
-  were not tried; they target vulnerabilities, which the rule set does not, so Quark's 0
-  on Ghera says nothing about them.
+- **Quark leads in the pipeline** (2026-10-03): `scan.sh` runs `quark-scan.sh -n` (cached in
+  `tools/`, `repaired.apk` when present) and `quark-leads.py`; `lead-eval.py` scores
+  `quark-leads.txt`; the runbook and workflow place it after the other lead files.
+  Gate PASS (2026-10-03, 99 metrics): on the 9 analyzed apps `quark-leads.txt` covers
+  0 to 8 findings each, and launcher B's "any source" coverage rose from 8 to 10 of 12.
+  Quark Script's CWE detectors were not tried; they target vulnerabilities, which the
+  rule set does not, so Quark's 0 on Ghera says nothing about them.
 - **Quark Script detectors for Ghera's categories.** `quark-query.py` (2026-10-03) runs
   one rule and resolves argument values; it reproduced Quark's CWE-798 showcase on OVAA
   (hardcoded AES key in `WeakCrypto.encrypt`). Next: per-category detectors as scripts
@@ -169,18 +169,23 @@ From the agent benchmarks; each is small and testable on the same samples.
   WebView JavaScript interfaces, logging of secrets), scored with `fix-eval.py` on Ghera's
   pairs, then measured as leads like `quark-leads.txt`.
 - **Merged-lambda case selection** (done 2026-10-03, gate PASS, 100 metrics; launcher B
-  structure leads 5,504 to 4,492 distinct functions, same findings covered). Left: use
-  the switch on the discriminator field rather than a method's first switch, and follow
-  case bodies by control flow instead of linearly ([gotchas.md](gotchas.md)).
+  structure leads 5,504 to 4,492 distinct functions, same findings covered). The
+  discriminator-field switch is done (2026-10-03); control-flow case bodies were tried and
+  reverted ([gotchas.md](gotchas.md)).
 - **Call graph cross-check.** androguard's bytecode cross-references (Apache-2.0; 4.1.4 on
   PyPI) are independent of `units.py`. Comparing edges on the benchmark samples would find
   false or missing edges systematically; pinned in the image, it could also serve agents
   as a query tool.
 - **Behavior maps** (`behavior-map.py`, 2026-10-03) use the scan scope plus the target's
   top package; callers outside it (bundled library code such as an embedded HTTP server) end the
-  chain early. First used on 2026-10-03 (the BTMOB and DDoS-bot reports): every generated
-  map needed edits. Merged-lambda classes produced false edges, Handler posts and threads
-  were missing, and Ghidra literal-pool words showed up as callers of native functions.
+  chain early. The first maps (BTMOB, DDoS bot) all needed edits. Fixed 2026-10-03:
+  Runnables and Handlers held in fields and posted, executed, or started are dotted
+  `later` edges (`Unit.async_`, also in `xref.py`; not in `structure-leads.py`, where they
+  cost launcher B a finding), and literal-pool offsets no longer make native callers.
+  Merged-lambda classes now switch on the lambda-number field when there is one. Left:
+  case bodies are still read linearly (following control flow was tried and reverted,
+  [gotchas.md](gotchas.md)), and Runnables passed as parameters or to libraries have no edge.
+  Gate PASS (2026-10-03).
 
 ## Tooling and operations
 

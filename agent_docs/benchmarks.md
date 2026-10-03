@@ -280,8 +280,10 @@ lead files name 38 (63%), Quark leads 23 (38%), only Quark 5, only the existing 
 - At the app level it adds one behavior signal; at the function level it adds 5 of 60
   cited functions (63% to 71%). The function key is the agent's own evidence, found from
   the existing leads, so it favors them.
-- 18 samples is a small slice; the result is a signal, not a proof. Wiring
-  `quark-leads.txt` into `scan.sh` is open ([further-work.md](further-work.md)).
+- 18 samples is a small slice; the result is a signal, not a proof.
+- In the pipeline since 2026-10-03 (`scan.sh`). On the 9 analyzed apps' reports
+  (`lead-eval.py`), `quark-leads.txt` covers 0 to 8 findings per app; launcher B's
+  "any source" coverage rose from 8 to 10 of 12 findings, the other apps' did not change.
 
 ## What the numbers do not say
 

@@ -6,7 +6,8 @@
   JNINativeMethod tables and init functions
 - collapses runs of byte-wise zeroing into one line
 - 32-bit code: annotates literal-pool words (DAT_<addr>) that point at strings or at
-  the start of a decompiled function (function pointers: handler tables, callbacks)
+  the start of a decompiled function (function pointers: handler tables, callbacks);
+  words used as offsets (base + DAT_<addr>) are not pointers and stay unannotated
 
 Comments only add information; no code is removed except the collapsed zeroing runs.
 
@@ -76,8 +77,14 @@ def main():
   for mo in re.finditer(r"^// ---- (\w+) @ 0x([0-9a-f]+)", text, re.M):
     funcs[header_vaddr(mo.group(2))] = mo.group(1)
 
+  # a pool word added to or subtracted from something is an offset (position-independent
+  # code: base + offset), not a pointer: its raw value matching a function or string
+  # address is chance, and an annotation would invent a reference
+  offsets = set(re.findall(r"[-+]\s*\(?\w*\)?\s*DAT_([0-9a-f]{8})\b", text)) | \
+      set(re.findall(r"\bDAT_([0-9a-f]{8})\b\s*[-+]", text))
+
   def pool_string(mo):
-    if "/* ->" in mo.group(0):
+    if "/* ->" in mo.group(0) or mo.group(1) in offsets:
       return mo.group(0)
     target = e.ptr_at(int(mo.group(1), 16) - shift)
     if target is None:
