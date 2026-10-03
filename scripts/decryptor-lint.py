@@ -14,9 +14,14 @@ Rejected: subprocess and every other process, network, or loader module (ctypes,
 importlib, pickle, marshal, ...); exec, eval, compile, __import__, getattr/setattr;
 os.system/exec*/spawn*/popen/fork/kill; links, chmod, and copying file modes; any
 dunder attribute or name other than __init__, __name__, __file__, __doc__ (no
-__dict__, __class__, __builtins__, __subclasses__); sys.path, sys.modules and the
-import hooks; `from <module> import <banned name>`; aliasing sys; relative imports;
+__dict__, __class__, __builtins__, __subclasses__); operator (attrgetter and
+methodcaller reach attributes without an attribute node); sys.path, sys.modules and
+the import hooks; `from <module> import <banned name>`; aliasing sys; relative imports;
 string literals that are paths under /proc/ or /dev/.
+
+Known limits: a path assembled at run time ("/pr" + "oc/...") passes the string check,
+and a static check cannot follow every way Python reaches an attribute. That is why
+the container, not this lint, is the boundary.
 
 Local helper modules next to decrypt.py may be imported. Every .py file under the
 directory, in subdirectories too, is checked the same way; run-decryptor.sh then runs
@@ -32,11 +37,13 @@ ALLOWED_MODULES = {
   "base64", "binascii", "struct", "zlib", "gzip", "bz2", "lzma", "zipfile", "io", "os", "os.path", "sys",
   "re", "json", "hashlib", "hmac", "itertools", "functools", "collections", "math", "string", "codecs",
   "pathlib", "glob", "shutil", "typing", "dataclasses", "array", "textwrap", "xml", "xml.etree",
-  "xml.etree.ElementTree", "html", "unicodedata", "operator", "enum", "secrets",
+  "xml.etree.ElementTree", "html", "unicodedata", "enum", "secrets",
 }
 ALLOWED_ROOTS = {"Cryptodome"}
 BANNED_NAMES = {"exec", "eval", "compile", "__import__", "globals", "locals", "vars", "breakpoint", "input",
-                "getattr", "setattr", "delattr"}
+                "getattr", "setattr", "delattr",
+                # attribute access without an Attribute node (operator is not allowed either)
+                "attrgetter", "methodcaller"}
 BANNED_ATTRS = {
   # processes
   "system", "popen", "execv", "execve", "execvp", "execvpe", "execl", "execle", "execlp", "execlpe",

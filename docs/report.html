@@ -65,6 +65,17 @@
     return;
   }
   out.innerHTML = DOMPurify.sanitize(marked.parse(md));
+  // reports name malicious hosts: never make them clickable. Only links within this
+  // site stay links; every absolute or scheme link becomes plain text.
+  out.querySelectorAll("a[href]").forEach(a => {
+    const href = a.getAttribute("href");
+    if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(href)) {
+      const t = document.createElement("span");
+      t.textContent = a.textContent;
+      t.title = "link removed: example reports never link to hosts they name";
+      a.replaceWith(t);
+    }
+  });
   document.title = (out.querySelector("h1") || {}).textContent || "Example report";
   out.querySelectorAll("table").forEach(t => {
     const w = document.createElement("div"); w.className = "table-scroll";

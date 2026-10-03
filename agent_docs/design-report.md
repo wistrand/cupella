@@ -120,6 +120,9 @@ block what was removed and added.
   command that produced it.
 - Quote short fragments (a URL, a manifest attribute, one or two lines of code).
   Never paste whole methods; the path is the reference.
+- Write every indicator (host, URL, address, contract) in a code span, never as a bare
+  URL or markdown link: GitHub and markdown renderers turn bare URLs into clickable
+  links, and a report on a malicious sample must not link to its infrastructure.
 - Redact live-looking secrets to the first and last four characters. The report may
   be shared; the full value stays findable through the cited path.
 - For obfuscated code, cite the obfuscated name as it appears. Do not report

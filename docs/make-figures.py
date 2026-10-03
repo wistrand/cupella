@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Regenerate the SVG figures in docs/index.html (hero, flow, layers, result charts).
 
-The numbers for the charts are in this file (tools, mt, the decryption pair); change
-them here after a benchmark rerun, then run: python3 docs/make-figures.py
+The chart numbers are read from agent_docs/benchmarks.md (the "Tool comparison" table
+and the decryption line), so that file is the one place to update after a benchmark
+rerun; then run: python3 docs/make-figures.py. It stops if a row it needs is missing.
 Each figure in index.html is replaced by its aria-labelledby id; nothing else changes.
 """
 import os
@@ -116,8 +117,7 @@ g.append('<text x="410" y="216" class="s-t" text-anchor="middle">what the app do
 g.append('</svg>')
 layers="".join(g)
 
-# Result charts. Numbers from agent_docs/benchmarks.md ("Tool comparison" and the
-# decryption effect); update them here after a rerun. Narrow layout (labels above the
+# Result charts, with numbers read from agent_docs/benchmarks.md. Narrow layout (labels above the
 # bars) so a chart fits a phone without scrolling sideways.
 CW, L, R = 520, 12, 508  # viewBox width, bar start, bar end
 
@@ -148,26 +148,63 @@ def bar_chart(ident, title, rows, vmax, ticks, tick_fmt):
   return "".join(c)
 
 # 3. Ghera chart. None: no rules for this benchmark's subject; not applicable, not 0
-tools = [("Cupella", 55, 6, True), ("MobSF 4.5.3", 20, 6, False), ("Quark-Engine 26.9.1", None, None, False)]
+BENCH = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agent_docs", "benchmarks.md")).read()
+
+def bench_row(label):
+  """cells of the Tool comparison row that starts with label"""
+  for line in BENCH.splitlines():
+    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    if cells and cells[0] == label:
+      return cells
+  raise SystemExit("agent_docs/benchmarks.md: no Tool comparison row %r" % label)
+
+def num(cell):
+  """leading integer of a cell; None when the tool is out of scope for that benchmark"""
+  m = re.match(r"(-?\d+)", cell)
+  return None if m is None or "out of scope" in cell else int(m.group(1))
+
+# label in the page, row label in benchmarks.md, ours
+TOOLS = [("Cupella", "this project (agent, verified)", True), ("MobSF 4.5.3", "MobSF 4.5.3", False),
+         ("Quark-Engine 26.9.1", "Quark-Engine 26.9.1", False)]
+ROWS = {name: bench_row(label) for name, label, _us in TOOLS}
+# columns: tool, Ghera found, fixed apps flagged, informedness, malware flagged, benign right, recall, precision
+tools = [(n, num(ROWS[n][1]), num(ROWS[n][2]) if num(ROWS[n][1]) is not None else None, us) for n, _l, us in TOOLS]
 ghera = bar_chart("gh-t", "Ghera: vulnerabilities found of 59 (filled bar) and fixed apps also flagged (outline); Quark-Engine not applicable",
   [(n, ("%d of 59 found; %d also in the fixed app" % (a, b)) if a is not None else
        "not applicable: a malware-behavior engine with no vulnerability rules", a, b, us) for n, a, b, us in tools],
   59, (0, 10, 20, 30, 40, 50, 59), str)
 
 # 4. MalEval behavior chart
-mt = [("Cupella", 65, 70, True), ("MobSF 4.5.3", 19, 60, False), ("Quark-Engine 26.9.1", 26, 56, False)]
+mt = [(n, num(ROWS[n][6]), num(ROWS[n][7]), us) for n, _l, us in TOOLS]
 maleval = bar_chart("mv-t", "MalEval: behavior recall (filled bar) and precision (outline)",
   [(n, "recall %d%%, precision %d%%" % (r, p), r, p, us) for n, r, p, us in mt],
   100, range(0, 101, 20), lambda v: "%d%%" % v)
 
-# 5. decryption effect
+# 5. decryption effect: "recall 50% -> 66%, precision 68% -> 74%" in benchmarks.md
+m = re.search(r"recall (\d+)% -> (\d+)%, precision (\d+)% -> (\d+)%", BENCH)
+if not m:
+  raise SystemExit("agent_docs/benchmarks.md: decryption line (recall a% -> b%, precision c% -> d%) not found")
+DEC = [("recall", int(m.group(1)), int(m.group(2))), ("precision", int(m.group(3)), int(m.group(4)))]
 dec = bar_chart("dc-t", "Six encrypted MalEval samples: behavior recall and precision before (outline) and after (filled bar) static decryption",
-  [("recall", "before 50%, after 66%", 66, 50, True), ("precision", "before 68%, after 74%", 74, 68, True)],
+  [(k, "before %d%%, after %d%%" % (a, b), b, a, True) for k, a, b in DEC],
   100, range(0, 101, 20), lambda v: "%d%%" % v)
+# the results table under the charts, from the same rows
+def cell(v):
+  return '<td class="num">%s</td>' % esc(v)
+trs = []
+for n, _l, us in TOOLS:
+  r = ROWS[n]
+  gh = [cell(str(num(r[1]))), cell(str(num(r[2])))] if num(r[1]) is not None else [cell("n/a"), cell("n/a")]
+  trs.append('      <tr%s><td>%s</td>%s%s%s%s%s</tr>' % (' class="us"' if us else "", esc(n), "".join(gh),
+             cell(r[4]), cell(r[5]), cell(r[6]), cell(r[7])))
+results_tbody = "<tbody>\n" + "\n".join(trs) + "\n    </tbody>"
+
 here = os.path.dirname(os.path.abspath(__file__))
 page = os.path.join(here, "index.html")
 html = open(page).read()
 for svg, ident in ((hero, "hero-t"), (flow, "flow-t"), (layers, "lay-t"), (ghera, "gh-t"), (maleval, "mv-t"), (dec, "dc-t")):
   html, n = re.subn(r'<svg viewBox="[^"]*" role="img" aria-labelledby="%s">.*?</svg>' % ident, lambda m: svg, html, flags=re.S)
   print("%s: %d replaced" % (ident, n))
+html, n = re.subn(r"<tbody>.*?</tbody>", lambda m: results_tbody, html, count=1, flags=re.S)
+print("results table: %d replaced" % n)
 open(page, "w").write(html)
