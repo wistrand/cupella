@@ -72,9 +72,10 @@ RUN python3 -m venv /opt/tools/pyenv \
  && apkid --help > /dev/null \
  && { hbc-file-parser --help > /dev/null 2>&1 || command -v hbc-file-parser > /dev/null; }
 
-# Quark-Engine and its rule set, for the tool comparison only, in their own virtualenv
-# (its androguard pin must not touch APKiD's). The rules are part of the image so that
-# Quark never downloads them at run time.
+# Quark-Engine and its rule set, in their own virtualenv (its androguard pin must not touch
+# APKiD's): scan.sh runs Quark on every sample (quark-leads.txt), quark-query.py uses Quark
+# Script, callgraph-check.py uses the androguard it brings, and the tool comparison uses
+# it too. The rules are part of the image so that Quark never downloads them at run time.
 RUN python3 -m venv /opt/tools/quarkenv \
  && /opt/tools/quarkenv/bin/pip install --no-cache-dir "quark-engine==${QUARK_VERSION}" \
  && git clone -q https://github.com/ev-flow/quark-rules /opt/tools/quark-rules \

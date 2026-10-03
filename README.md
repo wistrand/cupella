@@ -95,8 +95,9 @@ local model served by [llav](https://wistrand.github.io/llav/) can rank function
 a reading list (`./cupella model-leads.py <name>`). It has not found anything the rest
 missed.
 
-Everything runs in a container. The image contains jadx, apktool, Ghidra and blutter at
-pinned versions; the analysed files are parsed with no network access and with only
+Everything runs in a container. The image contains jadx, apktool, Ghidra, blutter, APKiD,
+hermes-dec, and Quark-Engine (with androguard) at pinned versions (full list:
+[agent_docs/reference.md](agent_docs/reference.md#third-party-tools)); the analysed files are parsed with no network access and with only
 `work/` writable. Two steps use the network and say so: comparing libraries against
 official builds (`./cupella reference-check.py`), and the build of the Dart analysis tool
 the first time a Flutter app with a new Dart version is analysed. That build happens

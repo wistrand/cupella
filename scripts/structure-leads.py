@@ -185,9 +185,14 @@ def fmt_caps(found):
 
 
 def manifest_components(work):
+  """(package, {class path: component kind}) from the sample's manifest. A child sample
+  without one (dex only, work/<parent>.dec<k>/ or .emb<k>/) runs in its parent's process,
+  usually as the code behind the components the parent declares: use the parent's."""
   path = os.path.join(work, "manifest.xml")
-  if not os.path.exists(path):
-    return "", {}
+  if not os.path.isfile(path) or not os.path.getsize(path):
+    m = re.match(r"(.+)\.(?:dec|emb)\d+$", os.path.basename(work.rstrip("/")))
+    parent = os.path.join(os.path.dirname(work.rstrip("/")), m.group(1)) if m else None
+    return manifest_components(parent) if parent and os.path.isdir(parent) else ("", {})
   with open(path, errors="replace") as f:
     text = f.read()
   m = re.search(r' package="([^"]+)"', text[:4000])

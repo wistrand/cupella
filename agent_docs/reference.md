@@ -8,6 +8,7 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 - Scripts
 - Commands
 - Container and network
+- Third-party tools
 - Local model
 
 ## Repository layout
@@ -170,6 +171,41 @@ Everything runs with `--network none` except:
   container with `scripts/` and `cache/` but not `data/` or `work/`. It takes several
   minutes once per Dart version; let it finish.
 - `--llav` (below).
+
+## Third-party tools
+
+Inside the image, pinned in `Dockerfile` (`./cupella versions` prints what was built):
+
+| Tool                                         | Pinned as                                           | Used by                                                                          |
+|----------------------------------------------|-----------------------------------------------------|----------------------------------------------------------------------------------|
+| jadx                                         | version and sha256                                  | `unpack.sh` (Java decompilation), `jadx-retry.sh`, MobSF comparison              |
+| apktool                                      | version and sha256                                  | `unpack.sh` (manifest, resources, smali)                                         |
+| Ghidra                                       | version, date, and sha256                           | `native-decompile.sh`                                                            |
+| blutter                                      | git commit                                          | `flutter-decompile.sh`; built per Dart version by `blutter-build.sh`             |
+| APKiD                                        | version                                             | `unpack.sh` (`apkid.txt`: packers, protectors, obfuscators)                      |
+| hermes-dec                                   | git commit                                          | `hermes-decompile.sh` (React Native Hermes bytecode)                             |
+| Quark-Engine, quark-rules                    | version; rules at a git commit                      | `scan.sh` (`quark-scan.sh`, `quark-leads.py`), `quark-query.py`, tool comparison |
+| androguard                                   | the version Quark-Engine pins                       | `callgraph-check.py` (independent call graph)                                    |
+| Exodus Privacy tracker list                  | snapshot at build, checksum in `./cupella versions` | `unpack.sh` (`trackers.txt`)                                                     |
+| capstone (`cstool`)                          | Debian package                                      | `native-disasm.py`; libcapstone also for the blutter build                       |
+| binutils                                     | Debian package                                      | `scan.sh` (`strings` on `resources.arsc`)                                        |
+| openssl                                      | Debian package                                      | `apksig-verify.py` (signature certificates)                                      |
+| pycryptodome                                 | Debian package                                      | agent-written decryptors (the one crypto module `decryptor-lint.py` allows)      |
+| OpenJDK 21                                   | Debian package                                      | runs jadx, apktool, Ghidra                                                       |
+| cmake, ninja, g++, ICU, pyelftools, requests | Debian packages                                     | the blutter build and blutter itself, not Cupella's scripts                      |
+
+Outside the image, all optional:
+
+| Tool              | Where                           | Used by                                       |
+|-------------------|---------------------------------|-----------------------------------------------|
+| MobSF             | its own image, pinned by digest | `mobsf-scan.py` (benchmark comparison only)   |
+| llav model server | the host or `LLAV_URL`          | `model-leads.py`, `--llav`                    |
+| clang, ld.lld     | the host                        | `./cupella check` (builds the native fixture) |
+
+Everything else (dex parsing, call graph, flows, pattern scans, string decoding, ZIP
+extraction, ELF and binary-XML reading) is Cupella's own Python standard-library code in
+`scripts/` (`dex.py`, `units.py`, `elf.py`, `apkunzip.py`, `axml2xml.py`, and the
+scripts that use them).
 
 ## Local model
 

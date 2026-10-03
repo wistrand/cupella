@@ -82,8 +82,8 @@ From the agent benchmarks; each is small and testable on the same samples.
   readers.
 - Child samples without a manifest (done 2026-10-03): `code-vs-package.py` uses the
   parent's manifest and adds the parent's native libraries, and `manifest-summary.txt`
-  points to the parent's. Left: `structure-leads.py` takes entry points from the child's
-  own (empty) manifest, so a dex-only child gets no component entry points.
+  points to the parent's. `structure-leads.py` and `behavior-map.py` take the parent's
+  components as entry points (BTMOB `.dec1`: 0 to 8 entry points).
 - Coordination for agent runs at scale. A full MalEval agent run (255 samples, each with
   reader, decryption, and verification agents, plus retries of stopped readers) is a
   work queue that prompts and progress files handle only because runs are small.
