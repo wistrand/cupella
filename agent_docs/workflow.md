@@ -239,7 +239,10 @@ script covers:
 1. Add the step to the matching script (`scan.sh` patterns, `unpack.sh` triage,
    `manifest-summary.py`, the lead scripts), APK-independent.
 2. Rerun it on the sample and read the output.
-3. For changes to `scan.sh`, `scope.py`, `units.py`, `flows.py`, `structure-leads.py`,
+3. After changing `units.py` or `dex.py`, run `./cupella callgraph-check.py <name>` on a
+   small and a large analyzed sample: "lost" calls and functions without a dex method
+   must stay 0.
+   For changes to `scan.sh`, `scope.py`, `units.py`, `flows.py`, `structure-leads.py`,
    or the unpack steps: `./cupella gate baseline` on the unchanged scripts first, then `./cupella gate`;
    keep the change only on PASS.
 4. Check that past reports' findings are still pointed at: `./cupella lead-eval.py <name>`.

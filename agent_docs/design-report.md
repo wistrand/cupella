@@ -111,7 +111,9 @@ check each edge in the source before using a map: merged lambda classes create f
 edges ([gotchas.md](gotchas.md)). A Runnable or Handler held in a field (or the object
 itself) and handed to `Handler.post`, `sendMessage`, an executor, or `Thread.start` is a
 dotted `later` edge; check in the code that the posted object is that one. One created
-with `new` at the call is an ordinary edge. Other hand-offs (a Runnable passed in as a
+with `new` at the call is an ordinary edge. A dotted `outside` edge passes through one
+method outside the scan scope (a listener class R8 moved, a library callback): read that
+method before keeping the edge. Other hand-offs (a Runnable passed in as a
 parameter, a listener registered with a library) are not edges; add them by hand and
 label them (`-->|Handler.post, read|`). Literal-pool words used as offsets (`base +
 DAT_...`) no longer produce native callers; other literal-pool references can still be

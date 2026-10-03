@@ -172,16 +172,30 @@ From the agent benchmarks; each is small and testable on the same samples.
   structure leads 5,504 to 4,492 distinct functions, same findings covered). The
   discriminator-field switch is done (2026-10-03); control-flow case bodies were tried and
   reverted ([gotchas.md](gotchas.md)).
-- **Call graph cross-check.** androguard's bytecode cross-references (Apache-2.0; 4.1.4 on
-  PyPI) are independent of `units.py`. Comparing edges on the benchmark samples would find
-  false or missing edges systematically; pinned in the image, it could also serve agents
-  as a query tool.
+- **Call graph check** (`callgraph-check.py`, 2026-10-03): androguard (in the image with
+  Quark) against `dex.py` and `units.py`. On 7 analyzed samples: decoding agrees (launcher
+  B: 11 of 206,995 methods differ, all array `clone()` naming), every jadx function has
+  one dex method, and no direct call androguard has is missing. Gate: Ghera and MalEval
+  unchanged; baseline re-recorded 2026-10-03 with exact chain scoring in `lead-eval.py`
+  (launcher B `structure-leads.txt` 5 of 12, was 6 with one short-name collision). Left:
+  - Chains in `structure-leads.txt` can string several `~` steps together (launcher B:
+    an Instabridge activity "reaching" launcher code in three outside steps). Rank or
+    cut chains by the number of outside steps.
+  - Launcher B's report cites functions in packages R8 renamed (`px/`, `fx/`, `uz/`),
+    which the scan scope does not include, so they can never be leads. `scope.py` could
+    add packages whose classes the scope's code creates (the `far` edges name them).
+  - With a scope without `defpackage`, classes outside it are not in the dex index, so
+    there are no `far` edges at all; loading every class would make both cases alike.
+  - A merged lambda class's methods without a switch count for every creator, and a
+    case body is read linearly.
+  - Run the check over MalEval and Ghera, not only the analyzed apps.
 - **Behavior maps** (`behavior-map.py`, 2026-10-03) use the scan scope plus the target's
   top package; callers outside it (bundled library code such as an embedded HTTP server) end the
   chain early. The first maps (BTMOB, DDoS bot) all needed edits. Fixed 2026-10-03:
   Runnables and Handlers held in fields and posted, executed, or started are dotted
-  `later` edges (`Unit.async_`, also in `xref.py`; not in `structure-leads.py`, where they
-  cost launcher B a finding), and literal-pool offsets no longer make native callers.
+  `later` edges (`Unit.async_`, also in `xref.py`; not in `structure-leads.py`), edges
+  through code outside the scope are dotted `outside` edges, and literal-pool offsets
+  no longer make native callers.
   Merged-lambda classes now switch on the lambda-number field when there is one. Left:
   case bodies are still read linearly (following control flow was tried and reverted,
   [gotchas.md](gotchas.md)), and Runnables passed as parameters or to libraries have no edge.

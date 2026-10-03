@@ -358,9 +358,11 @@ app, and malware is named by its public family (BTMOB, Octo).
   switch. A case body is read up to the next return, throw, or goto. Following it
   through gotos and branches instead was tried (2026-10-03) and reverted: launcher B's
   `NovaMobileActivity.onCreate` gained 16 callees, several wrong (Stripe activities'
-  `finish`), and `structure-leads.txt` lost one of the report's 12 findings. So an odd
-  edge can remain, and a case's calls after a branch can be missing. Check an edge in
-  the source before relying on it in obfuscated code.
+  `finish`). So an odd edge can remain, and a case's calls after a branch can be
+  missing; the methods of a merged class that have no switch count for every creator.
+  Such a class usually lies outside the scope, so these edges are `far` edges
+  (`~> outside` in `xref.py`). Check an edge in the source before relying on it in
+  obfuscated code.
 - **Ghidra literal-pool words used as offsets are not pointers (verified, fixed).** In
   32-bit position-independent code Ghidra shows `base + DAT_x`, where the pool word is an
   offset. `postprocess.py` annotated any pool word whose value equaled a function
@@ -368,18 +370,45 @@ app, and malware is named by its public family (BTMOB, Octo).
   DDoS-bot sample six functions "called" `FUN_00008b94` that way. Since 2026-10-03 a word
   used in addition or subtraction gets no annotation, and `units.py` ignores such
   annotations in older output.
-- **More edges can lose findings in `structure-leads.txt` (verified).** Its sections
-  have budgets and pick one chain per capability, so adding true edges changes which
-  functions are listed. Linking Handler posts and thread starts into the call graph cost
-  launcher B one of 12 findings; those edges are kept apart (`Unit.async_`) and shown
-  only by `behavior-map.py` and `xref.py`. Measure any call graph change with
-  `./cupella lead-eval.py` on the analyzed apps before keeping it.
+- **A lead that names the right function can have the wrong reason (verified).** Before
+  2026-10-03 the Java call graph folded every class without a jadx function into its
+  creator, in an order-dependent walk, so launcher B's `NovaMobileActivity.onCreate` was
+  listed as reaching accessibility "via NovaLauncher.q0" (it calls no such thing) and
+  that line counted as covering the WebView finding. `lead-eval.py` scores a lead by
+  the function it names, not by whether its chain is true. Read the chain's first call
+  in the source before building on a structure lead.
+- **Short names collide in obfuscated apps (verified, fixed).** `lead-eval.py` matched a
+  chain entry such as `c.d` to every function named `c.d`; launcher B has 1,077 files
+  named `c.java`, and one of its 12 findings was "covered" only that way, by a Stripe
+  coroutine's chain. Since 2026-10-03 `structure-leads.txt` writes `pkg/Class.method`
+  where several files in scope have that name, and `lead-eval.py` credits a chain entry
+  only when it names one file's function. On that scoring the graph before and after
+  the rebuild both cover 5 of launcher B's 12 findings.
+- **The Java call graph has three kinds of edges (since 2026-10-03).** `calls`: what a
+  function's own code calls, checked against androguard (`./cupella callgraph-check.py`:
+  "lost" must be 0). `far`: reached through one method of a class whose source file is
+  outside the scanned scope (shown as `~> outside` by `xref.py`, dotted in behavior
+  maps): real for a listener class R8 moved to another package, noise for a library
+  that calls back; a `~` before a chain entry in `structure-leads.txt` marks such a
+  step. `async_`: a Runnable or Handler handed to a thread or looper. Leads
+  use `calls` plus one outside hop (`FAR_HOPS`); two hops already link Stripe activities
+  to launcher code (launcher B: 9,641 edges at one hop, 31,054 at two, 200,782 at four).
+- **Brace counting and keyword checks in the jadx source parser (verified, fixed).**
+  `units.py` lost functions and attributed others to the wrong class: a nested
+  `/* data */ class` was not seen as a class, braces in string literals and comments
+  shifted the nesting for the rest of the file, `synchronized` methods and methods whose
+  return type starts like a keyword (`double`, a class named `if0`) were skipped, and
+  local classes (`Outer$method$Name`) were looked up as `Outer$Name`. A function with the
+  wrong class matches no dex method and has no call edges: 1,194 of launcher B's 13,091
+  functions. `callgraph-check.py` lists functions without a dex method; that list
+  should be empty.
 - **A `defpackage` scope decodes every class (verified, kept on purpose).** In
   `units.py` a scope that includes `defpackage` adds the prefix `L`, which matches all
-  classes, so the call graph covers library code too for those samples. Narrowing it to
+  classes, so the dex index covers library code too for those samples. Narrowing it to
   classes without a package lost real flows on MalEval (Bank Stealing 24 to 20, Privacy
-  Stealing 34 to 31) and failed the gate, so it stays until the graph reaches library code
-  some other way.
+  Stealing 34 to 31) and failed the gate, so it stays. In the call graph those classes
+  are "outside the scope" (`far` edges); with any other scope, calls into classes
+  outside it are opaque (`ext`).
 
 - **Data flows stop at renamed libraries (verified).** `flows.py` recognizes sources
   and sinks by API name, so only framework calls (`android.*`, `java.*`) and libraries

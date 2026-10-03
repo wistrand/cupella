@@ -124,7 +124,7 @@ def main():
       return True
     if depth == 0:
       return False
-    for cid in u.calls | u.refs | u.async_:
+    for cid in units.callees(u) | u.refs | u.async_:
       if cid in by_id and cid not in seen:
         seen.add(cid)
         if leads_to_cap(by_id[cid], depth - 1, seen):
@@ -132,12 +132,12 @@ def main():
     return False
 
   frontier, n_callees, reached = [target], 0, {target.id}
-  few = len([c for c in target.calls | target.refs | target.async_ if c in by_id]) <= FEW_CALLEES
+  few = len([c for c in units.callees(target) | target.refs | target.async_ if c in by_id]) <= FEW_CALLEES
   cut = False
   for level in range(down):
     nxt = []
     for v in frontier:
-      for cid in sorted(v.calls | v.refs | v.async_):
+      for cid in sorted(units.callees(v) | v.refs | v.async_):
         if cid not in by_id:
           continue
         w = by_id[cid]
@@ -169,7 +169,11 @@ def main():
       lines.append('  %s["%s"]' % (ids[uid], text))
   for a, b in sorted(edges):
     u = nodes[a]
-    if b in u.async_ and b not in u.calls | u.refs:
+    if b in u.calls | u.refs:
+      lines.append("  %s --> %s" % (ids[a], ids[b]))
+    elif b in u.far:
+      lines.append("  %s -. outside .-> %s" % (ids[a], ids[b]))  # through a method outside the scope
+    elif b in u.async_:
       lines.append("  %s -. later .-> %s" % (ids[a], ids[b]))  # handed to a thread or looper
     else:
       lines.append("  %s --> %s" % (ids[a], ids[b]))
@@ -188,6 +192,8 @@ def main():
   out.append("Calls through reflection, native pointers, or loaded code are not in the graph. A dotted")
   out.append("\"later\" edge is a Runnable or Handler held in a field or the object itself, handed to a")
   out.append("thread, executor, or looper by that function: check in the code that it is that object.")
+  out.append("A dotted \"outside\" edge passes through one method outside the scanned scope (a class")
+  out.append("created there, a callback): read that code before relying on the edge.")
   out.append("")
   out += lines
   out.append("")

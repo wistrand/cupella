@@ -272,6 +272,10 @@ output exists. Sections, and what to do with each:
 - Capability map: Dart and native functions per capability. For Flutter apps this
   is the counterpart of `scan.txt`, which searches Java only.
 
+In a chain, `pkg/Class.method` is written where several files have a `Class.method`,
+and `~` marks a step through a method outside the scan scope: weaker than a direct
+call, so read that step in the source first.
+
 Capabilities come from API names, imports, system calls, and strings, so a function
 reached only through a computed pointer or reflection has no chain. Treat an
 empty section as "not found by this method".
@@ -298,7 +302,10 @@ branches. Read every flow's method before writing about it.
   dynamically loaded code is not followed. See [gotchas.md](gotchas.md).
 
 To see who calls a function and what it calls, use
-`./cupella xref.py <name> <Class.method | FUN_... | Class::method>` instead of grep. For a
+`./cupella xref.py <name> <Class.method | FUN_... | Class::method>` instead of grep. `->` is
+a call in the function's own code; `~> outside` is reached through one method outside
+the scan scope and needs a look at that method; `=> later` is a Runnable or Handler
+handed to a thread or looper. For a
 finding that rests on a call chain, `./cupella behavior-map.py <name> <Class.method>` draws
 the chain from entry point to capability as a Mermaid block for the report
 ([design-report.md](design-report.md) "Behavior maps").

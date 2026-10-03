@@ -144,9 +144,15 @@ def own_caps(u, str_cats, imp_cats):
   return caps
 
 
+AMBIGUOUS = set()  # Java short names (Class.method) that several files have, set by main()
+
+
 def short(u):
+  """a function's name in a call chain: Class.method, with the path (pkg/Class.method)
+  when another file in scope has a function of that name, as obfuscated apps do"""
   if u.kind == "java":
-    return "%s.%s" % (u.cls, u.name)
+    name = "%s.%s" % (u.cls, u.name)
+    return "%s.%s" % (u.file[len("jadx/sources/"):-5], u.name) if name in AMBIGUOUS else name
   if u.kind == "dart":
     return u.id[5:]
   return u.name
@@ -159,7 +165,7 @@ def reach(u, by_id, caps, depth):
   for _ in range(depth):
     nxt = []
     for v, path in frontier:
-      for cid in sorted(v.calls | v.refs):
+      for cid in sorted(units.callees(v) | v.refs):
         if cid in seen or cid not in by_id:
           continue
         seen.add(cid)
@@ -180,7 +186,9 @@ def fmt_caps(found):
   parts = []
   for c in sorted(found, key=lambda c: (c in WEAK, c)):
     chain = found[c]
-    parts.append(c if len(chain) == 1 else "%s via %s" % (c, " > ".join(short(x) for x in chain[1:])))
+    # "~" marks a step that passes through a method outside the scanned scope
+    names = [("" if x.id in prev.calls | prev.refs else "~") + short(x) for prev, x in zip(chain, chain[1:])]
+    parts.append(c if len(chain) == 1 else "%s via %s" % (c, " > ".join(names)))
   return "; ".join(parts)
 
 
@@ -224,6 +232,11 @@ def main():
   str_cats = ns.STRING_CATEGORIES
   imp_cats = ns.IMPORT_CATEGORIES
   allu = units.java_units(work, scopes) + units.dart_units(work, name) + units.native_units(work)
+  files_of = {}
+  for u in allu:
+    if u.kind == "java":
+      files_of.setdefault("%s.%s" % (u.cls, u.name), set()).add(u.file)
+  AMBIGUOUS.update(n for n, fs in files_of.items() if len(fs) > 1)
   by_id, callers = units.callers_of(allu)
   caps = {u.id: own_caps(u, str_cats, imp_cats) for u in allu}
   reached = {u.id: reach(u, by_id, caps, DEPTH) for u in allu}
@@ -240,6 +253,9 @@ def main():
   w("Leads only: read the code behind each line. Capabilities come from API names, imports,")
   w("system calls, and strings; 'via' shows one call chain (up to %d calls deep) to a function" % DEPTH)
   w("that has the capability. Native calls through computed pointers are not followed.")
+  w("In a chain, pkg/Class.method is written where several files have a Class.method, and")
+  w("~ marks a step through a method outside the scanned scope (a class created there, a")
+  w("callback): weaker than a direct call, check it in the source.")
   w()
   w("functions: %s; java scopes: %s" % (", ".join("%s %d" % kv for kv in sorted(kinds.items())) or "none",
                                          ", ".join(scopes) or "none"))

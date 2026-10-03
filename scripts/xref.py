@@ -12,6 +12,9 @@ Usage: ./cupella xref.py <name> <query> [--depth N] [--scope path ...]
   --depth  levels of callers and callees to show (default 1, at most 3)
   --scope  Java scope under jadx/sources (default: scope.py)
 Output: stdout. Callers marked <-, callees ->, external API calls (Java) as "calls".
+"~> outside": reached through one method outside the scanned scope (a class created
+there whose methods then run, or a method there that calls back). Weaker than ->: a
+merged lambda class or a library callback can name functions that do not run; check it.
 Runnables and Handlers held in a field or the object itself and handed to a thread,
 executor, or looper: "=> later" (this function hands them over), "<= later" (who hands
 this one over). Check in the code that it is that object.
@@ -89,6 +92,9 @@ def main():
     print("%s  %s" % (short(u), u.where))
     tree(u, lambda x: callers.get(x.id, ()), "<-", 1, {u.id})
     tree(u, lambda x: x.calls | x.refs, "->", 1, {u.id})
+    # reached through a method outside the scanned scope (Java): a class it creates there
+    # whose methods then run, or a method there that calls back
+    tree(u, lambda x: units.callees(x) - x.calls, "~> outside", 1, {u.id})
     # Runnables and Handlers it hands to a thread or looper, and who hands this one over
     tree(u, lambda x: x.async_ - x.calls - x.refs, "=> later", 1, {u.id})
     tree(u, lambda x: handed_by.get(x.id, ()), "<= later", 1, {u.id})

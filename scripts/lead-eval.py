@@ -10,7 +10,8 @@ which findings the source pointed at, and how far down its list the first pointe
             cites only a file, any function in that file)
   rank      position of that first lead among the source's distinct functions (for
             structure-leads.txt the functions named in a line's call chains count too,
-            right after the line's own function)
+            right after the line's own function; a chain entry counts only when it
+            names one file's function: Class.method that several files have does not)
   relevant  share of a source's distinct functions that the report cites anywhere
 
 This measures lead sources against past analyses, so it is biased toward whatever
@@ -140,10 +141,14 @@ def parse_leads(path, idx):
     if u.kind == "dart":
       dart_by_where[(u.file, u.start)] = u.id
   model = path.endswith("model-leads.txt")
-  java_by_short = {}
-  for us in idx.java.values():
-    for u in us:
-      java_by_short.setdefault("%s.%s" % (u.cls, u.name), []).append(u.id)
+  # chain entries of structure-leads.txt: Class.method, or pkg/Class.method where the
+  # short name is in several files. Among the functions in scope, as structure-leads.py
+  # sees them; a short name that several files have names none of them.
+  java_by_short, java_by_path = {}, {}
+  for u in idx.scoped:
+    java_by_short.setdefault("%s.%s" % (u.cls, u.name), []).append(u)
+    java_by_path.setdefault("%s.%s" % (u.file[len("jadx/sources/"):-5], u.name), []).append(u.id)
+  java_by_short = {n: [u.id for u in us] for n, us in java_by_short.items() if len({u.file for u in us}) == 1}
   native_names = {}
   for u in idx.other:
     if u.kind == "native":
@@ -154,8 +159,8 @@ def parse_leads(path, idx):
     out = []
     for part in re.findall(r" via ([^;]+)", line):
       for name in part.split(" > "):
-        name = name.strip()
-        out.extend(java_by_short.get(name, []) or native_names.get(name, []) or
+        name = name.strip().lstrip("~")
+        out.extend(java_by_path.get(name, []) or java_by_short.get(name, []) or native_names.get(name, []) or
                    [u.id for u in idx.other if u.kind == "dart" and u.id == "dart:" + name])
     return out
 

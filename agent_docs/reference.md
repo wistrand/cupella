@@ -71,7 +71,8 @@ On demand:
 
 | Script                        | Role                                                                    |
 |-------------------------------|-------------------------------------------------------------------------|
-| `xref.py`                     | callers and callees of a Java, native, or Dart function                 |
+| `xref.py`                     | callers and callees of a Java, native, or Dart function; `~> outside` marks a callee reached through code outside the scan scope |
+| `callgraph-check.py`          | checks the Java call graph against androguard: decoding, the mapping of dex methods to jadx functions, lost and added calls; `callgraph-check.txt` |
 | `behavior-map.py`             | Mermaid call graph of one function (callers to entry points, callees to capabilities) for a report finding; `work/<name>/maps/` |
 | `quark-query.py`              | runs one Quark rule with Quark Script: each occurrence with its jadx location, argument values at the call sites, and hardcoded literals |
 | `annotate-strings.py`         | copies of jadx files with each decrypted string call followed by its plaintext (`jadx-strings/`); run by `run-decryptor.sh` when the decryptor writes `out/string-map.tsv` |
@@ -118,6 +119,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella structure-leads.py <name> [scope ...]   # rerun after native-decompile.sh
 ./cupella flows.py <name> [scope ...]             # rerun alone after changing sources or sinks
 ./cupella xref.py <name> <Class.method|FUN_...|Class::method> [--depth N]
+./cupella callgraph-check.py <name> [scope ...]   # after changing units.py or dex.py: "lost" and functions without a dex method must be 0
 ./cupella behavior-map.py <name> <Class.method|util/Foo.java:120> [--up N] [--down N]   # Mermaid map for a finding
 ./cupella quark-query.py <name> <rule-id|work/<name>/quark-rules/x.json>     # values passed at an API pair's call sites
 ./cupella dex-disasm.py <name> <Class[.method]>   # bytecode jadx failed on; --list to list classes
@@ -185,7 +187,7 @@ Inside the image, pinned in `Dockerfile` (`./cupella versions` prints what was b
 | APKiD                                        | version                                             | `unpack.sh` (`apkid.txt`: packers, protectors, obfuscators)                      |
 | hermes-dec                                   | git commit                                          | `hermes-decompile.sh` (React Native Hermes bytecode)                             |
 | Quark-Engine, quark-rules                    | version; rules at a git commit                      | `scan.sh` (`quark-scan.sh`, `quark-leads.py`), `quark-query.py`, tool comparison |
-| androguard                                   | the version Quark-Engine pins                       | `callgraph-check.py` (independent call graph)                                    |
+| androguard                                   | the version Quark-Engine pins                       | `callgraph-check.py` (reference for the call graph)                                    |
 | Exodus Privacy tracker list                  | snapshot at build, checksum in `./cupella versions` | `unpack.sh` (`trackers.txt`)                                                     |
 | capstone (`cstool`)                          | Debian package                                      | `native-disasm.py`; libcapstone also for the blutter build                       |
 | binutils                                     | Debian package                                      | `scan.sh` (`strings` on `resources.arsc`)                                        |

@@ -42,7 +42,7 @@ INVOKE = set(range(0x6e, 0x73)) | set(range(0x74, 0x79)) | {0xfa, 0xfb}
 
 class Method:
   __slots__ = ("cls", "name", "params", "ret", "code", "invokes", "strings", "news", "dex", "code_off",
-               "new_consts", "cases", "fields")
+               "new_consts", "cases", "fields", "flags")
 
   def __init__(self, cls, name, params, ret):
     self.cls, self.name, self.params, self.ret, self.code = cls, name, params, ret, False
@@ -50,6 +50,7 @@ class Method:
     self.invokes, self.strings, self.news = [], [], []
     self.new_consts, self.cases = [], {}
     self.fields = []  # types of object fields read (iget-object, sget-object)
+    self.flags = 0    # access flags: 0x8 static, 0x40 bridge, 0x400 abstract, 0x1000 synthetic
 
 
 class DexError(ValueError, IndexError, struct.error):
@@ -92,6 +93,7 @@ class Dex:
     self.m_n, self.m_off = u("<II", buf, 0x58)
     self.c_n, self.c_off = u("<II", buf, 0x60)
     self._str, self._mkey = {}, {}
+    self.access = {}    # method_idx -> access flags, filled by methods_of
     self.problems = []  # classes skipped or cut short: (descriptor or index, reason)
 
   @malformed
@@ -170,9 +172,10 @@ class Dex:
         idx = 0
         for _ in range(count):
           d, p = uleb(b, p)
-          _, p = uleb(b, p)
+          flags, p = uleb(b, p)
           code, p = uleb(b, p)
           idx += d
+          self.access[idx] = flags
           yield idx, code
     except IndexError:  # ran past the end of the file: keep the methods read so far
       self.problems.append(("class_data at 0x%x" % data, "truncated"))
@@ -325,6 +328,7 @@ def load(paths, want):
           continue
         m = Method(c, name, params, ret)
         m.code = bool(code)
+        m.flags = d.access.get(idx, 0)
         m.dex, m.code_off = d, code
         if code:
           try:
