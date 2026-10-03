@@ -48,7 +48,6 @@ nav a:hover { color: var(--fg); }
 .hero h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.1; margin: 0 0 16px; letter-spacing: -0.01em; }
 .hero p.lead { font-size: clamp(18px, 2.6vw, 21px); color: var(--muted); max-width: 680px; margin: 0 0 24px; }
 .hero-fig { margin: 4px 0 28px; max-width: 760px; }
-.hero .note { font-size: 15px; color: var(--muted); border-left: 3px solid var(--accent); padding-left: 12px; max-width: 680px; }
 
 section { padding: 40px 0; border-top: 1px solid var(--line); }
 h2 { font-size: 26px; margin: 0 0 14px; }
