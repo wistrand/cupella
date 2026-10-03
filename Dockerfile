@@ -1,6 +1,7 @@
 # Analysis image for Cupella: every external tool the scripts call, at pinned
-# versions with checked downloads. The repo itself is not copied in; ./cupella mounts
-# scripts/ and data/ read-only and work/ and cache/ read-write.
+# versions (downloads checked by sha256; Python packages pinned by version or commit,
+# not by hash). The repo itself is not copied in; ./cupella mounts scripts/ and data/
+# read-only, work/ read-write, and cache/ read-only to containers that see APK data.
 #
 # Build:  ./cupella build
 # To upgrade a tool, change its version and checksum here and rebuild.
@@ -68,7 +69,8 @@ RUN python3 -m venv /opt/tools/pyenv \
       "git+https://github.com/P1sec/hermes-dec@${HERMES_DEC_COMMIT}" \
  && for t in apkid hbc-decompiler hbc-disassembler hbc-file-parser; do \
       ln -s "/opt/tools/pyenv/bin/$t" "/usr/local/bin/$t"; done \
- && apkid --help > /dev/null && hbc-file-parser --help > /dev/null 2>&1 || command -v hbc-file-parser
+ && apkid --help > /dev/null \
+ && { hbc-file-parser --help > /dev/null 2>&1 || command -v hbc-file-parser > /dev/null; }
 
 # Quark-Engine and its rule set, for the tool comparison only, in their own virtualenv
 # (its androguard pin must not touch APKiD's). The rules are part of the image so that

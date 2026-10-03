@@ -114,26 +114,35 @@ class Elf:
     b = self.buf
     if b[:4] != b"\x7fELF":
       raise ValueError("not an ELF file")
+    if len(b) < 52:
+      raise ValueError("truncated ELF header")
     if b[5] != 1:
       raise ValueError("big-endian ELF not supported")
     self.is64 = b[4] == 2
     self.word = 8 if self.is64 else 4
-    self.type, machine = struct.unpack_from("<HH", b, 16)
-    self.machine = EM.get(machine, "em%d" % machine)
-    if self.is64:
-      (self.entry, phoff, shoff, _fl, _eh, phentsize, phnum, shentsize, shnum,
-       shstrndx) = struct.unpack_from("<QQQIHHHHHH", b, 24)
-    else:
-      (self.entry, phoff, shoff, _fl, _eh, phentsize, phnum, shentsize, shnum,
-       shstrndx) = struct.unpack_from("<IIIIHHHHHH", b, 24)
-    self.segments = []  # (type, flags, offset, vaddr, filesz, memsz)
-    for i in range(phnum):
-      o = phoff + i * phentsize
+    # 32-bit ARM code pointers found in data (init_array, JNI tables): bit 0 set is Thumb.
+    # The addresses returned are masked; the mode is kept here.
+    self.thumb_ptrs, self.arm_ptrs = set(), set()
+    # malformed input raises ValueError, never struct.error (callers catch ValueError)
+    try:
+      self.type, machine = struct.unpack_from("<HH", b, 16)
+      self.machine = EM.get(machine, "em%d" % machine)
       if self.is64:
-        t, fl, off, va, _pa, fsz, msz, _al = struct.unpack_from("<IIQQQQQQ", b, o)
+        (self.entry, phoff, shoff, _fl, _eh, phentsize, phnum, shentsize, shnum,
+         shstrndx) = struct.unpack_from("<QQQIHHHHHH", b, 24)
       else:
-        t, off, va, _pa, fsz, msz, fl, _al = struct.unpack_from("<IIIIIIII", b, o)
-      self.segments.append((t, fl, off, va, fsz, msz))
+        (self.entry, phoff, shoff, _fl, _eh, phentsize, phnum, shentsize, shnum,
+         shstrndx) = struct.unpack_from("<IIIIHHHHHH", b, 24)
+      self.segments = []  # (type, flags, offset, vaddr, filesz, memsz)
+      for i in range(phnum):
+        o = phoff + i * phentsize
+        if self.is64:
+          t, fl, off, va, _pa, fsz, msz, _al = struct.unpack_from("<IIQQQQQQ", b, o)
+        else:
+          t, off, va, _pa, fsz, msz, fl, _al = struct.unpack_from("<IIIIIIII", b, o)
+        self.segments.append((t, fl, off, va, fsz, msz))
+    except struct.error as ex:
+      raise ValueError("truncated ELF or program headers: %s" % ex) from None
     self.sections = []  # dict(name, type, flags, addr, offset, size, link, entsize)
     self.sections_ok = False
     try:
@@ -153,15 +162,19 @@ class Elf:
         self.sections_ok = any(s["name"] == ".text" for s in self.sections)
     except (struct.error, IndexError):
       self.sections = []
-    self._parse_dynamic()
-    self._parse_symbols()
-    self._parse_relocs()
+    try:
+      self._parse_dynamic()
+      self._parse_symbols()
+      self._parse_relocs()
+    except struct.error as ex:
+      raise ValueError("malformed ELF tables: %s" % ex) from None
 
   # --- address helpers
   def off(self, vaddr):
     for t, _fl, off, va, fsz, _msz in self.segments:
       if t == PT_LOAD and va <= vaddr < va + fsz:
-        return off + (vaddr - va)
+        o = off + (vaddr - va)
+        return o if o < len(self.buf) else None  # filesz may claim more than the file has
     return None
 
   def is_exec(self, vaddr):
@@ -255,7 +268,7 @@ class Elf:
     ent = 24 if self.is64 else 16
     if DT_HASH in self.dynd:
       o = self.off(self.dynd[DT_HASH])
-      if o is not None:
+      if o is not None and o + 8 <= len(self.buf):
         return struct.unpack_from("<I", self.buf, o + 4)[0]
     if DT_GNU_HASH in self.dynd:
       n = self._gnu_hash_count()
@@ -328,9 +341,10 @@ class Elf:
     if o is None or self.buf[o:o + 4] != b"APS2":
       return
     pos = [o + 4]
-    end = o + size
+    end = min(o + size, len(self.buf))
 
     def sleb():
+      """next SLEB128; EOFError when the data ends before its last byte"""
       r = s = 0
       while pos[0] < end:
         byte = self.buf[pos[0]]
@@ -340,28 +354,34 @@ class Elf:
         if not byte & 0x80:
           if byte & 0x40:
             r -= 1 << s
-          break
-      return r
+          return r
+      raise EOFError
 
-    count, offset, addend = sleb(), sleb(), 0
     mask = (1 << (64 if self.is64 else 32)) - 1
-    done = 0
-    while done < count and pos[0] < end:
-      gsize, gflags = sleb(), sleb()
-      by_info, by_delta, by_addend, has_addend = gflags & 1, gflags & 2, gflags & 4, gflags & 8
-      gdelta = sleb() if by_delta else 0
-      ginfo = sleb() if by_info else 0
-      if has_addend and by_addend:
-        addend += sleb()
-      if not has_addend:
-        addend = 0
-      for _ in range(gsize):
-        offset += gdelta if by_delta else sleb()
-        info = ginfo if by_info else sleb()
-        if has_addend and not by_addend:
+    try:
+      count, offset, addend = sleb(), sleb(), 0
+      # a group with delta and info shared needs no bytes per relocation, so the count is
+      # the only bound: no real library has more relocations than words in the file
+      count = min(count, len(self.buf) // self.word)
+      done = 0
+      while done < count and pos[0] < end:
+        gsize, gflags = sleb(), sleb()
+        by_info, by_delta, by_addend, has_addend = gflags & 1, gflags & 2, gflags & 4, gflags & 8
+        gdelta = sleb() if by_delta else 0
+        ginfo = sleb() if by_info else 0
+        if has_addend and by_addend:
           addend += sleb()
-        yield offset & mask, info & mask, (addend if rela else None)
-        done += 1
+        if not has_addend:
+          addend = 0
+        for _ in range(max(0, min(gsize, count - done))):
+          offset += gdelta if by_delta else sleb()
+          info = ginfo if by_info else sleb()
+          if has_addend and not by_addend:
+            addend += sleb()
+          yield offset & mask, info & mask, (addend if rela else None)
+          done += 1
+    except EOFError:
+      return
 
   def _iter_relr(self, vaddr, size):
     o = self.off(vaddr)
@@ -444,21 +464,33 @@ class Elf:
     return out
 
   # --- derived facts
-  def init_functions(self):
+  def code_ptr(self, v):
+    """a code pointer from data: on 32-bit ARM bit 0 is the Thumb bit; record the mode
+    in thumb_ptrs / arm_ptrs and return the address without it"""
+    if self.machine != "arm":
+      return v
+    if v & 1:
+      self.thumb_ptrs.add(v & ~1)
+      return v & ~1
+    self.arm_ptrs.add(v)
+    return v
+
+  def init_functions(self, max_entries=4096):
     out = []
     if DT_INIT in self.dynd:
-      out.append(self.dynd[DT_INIT])
+      out.append(self.code_ptr(self.dynd[DT_INIT]))
     if DT_INIT_ARRAY in self.dynd:
       base, size = self.dynd[DT_INIT_ARRAY], self.dynd.get(DT_INIT_ARRAYSZ, 0)
+      size = min(size, len(self.buf), max_entries * self.word)  # the size is not checked by anyone
       for a in range(base, base + size, self.word):
         v = self.ptr_at(a)
         if v not in (None, 0, (1 << self.word * 8) - 1):
-          out.append(v)
+          out.append(self.code_ptr(v))
     return out
 
   def build_id(self):
     s = self.section(".note.gnu.build-id")
-    if s and s["size"] >= 16:
+    if s and s["size"] >= 16 and s["offset"] + 12 <= len(self.buf):
       namesz, descsz = struct.unpack_from("<II", self.buf, s["offset"])
       start = s["offset"] + 12 + ((namesz + 3) & ~3)
       return self.buf[start:start + descsz].hex()
@@ -492,6 +524,7 @@ class Elf:
     for t, fl, off, va, fsz, _msz in self.segments:
       if t != PT_LOAD or fl & 1:
         continue
+      fsz = min(fsz, max(0, len(self.buf) - off))  # filesz may claim more than the file has
       a = (va + w - 1) & ~(w - 1)
       end = va + fsz - 3 * w
       while a <= end:
@@ -516,7 +549,7 @@ class Elf:
     p0, p1, p2 = self.ptr_at(a), self.ptr_at(a + self.word), self.ptr_at(a + 2 * self.word)
     if not p0 or not p1 or not p2:
       return None
-    fn = p2 & ~1 if self.machine == "arm" else p2
+    fn = p2 & ~1 if self.machine == "arm" else p2  # Thumb bit: recorded by code_ptr below
     if not self.is_code(fn):
       return None
     o1 = self.off(p1)
@@ -528,7 +561,7 @@ class Elf:
     name = self.cstr(p0, 256)
     if not name or not JNI_NAME.match(name):
       return None
-    return name, sig, fn
+    return name, sig, self.code_ptr(p2)
 
   def strings(self, minlen=5):
     """Printable ASCII strings from non-executable file content, with file offsets."""

@@ -92,7 +92,8 @@ while IFS=$'\t' read -r cls methods; do
     state="not produced"
     if [ -n "$file" ]; then
       if grep -qF -e "Method not decompiled: $m(" -e "in method: $m(" "$file" \
-        || { grep -q "Method dump skipped" "$file" && grep -A3 "Method dump skipped" "$file" | grep -q "$short"; }; then
+        || { dump=$(grep -A3 -F -- "Method dump skipped" "$file" || true)
+             [ -n "$dump" ] && grep -qwF -- "$short" <<< "$dump"; }; then
         state="STILL FAILED in simple mode (./cupella dex-disasm.py $name $m)"
       else
         state="ok"

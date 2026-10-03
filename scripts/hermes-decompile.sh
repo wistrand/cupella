@@ -70,4 +70,4 @@ if [ -f "$out/bundle.hasm" ] || [ -f "$out/bundle.js" ]; then
       | sed -E "s/.*[.('\"]//" | sort | uniq -c | sort -rn | head -n 60 || true
   } >> "$out/SUMMARY.txt"
 fi
-cat "$out/SUMMARY.txt" | head -n 12
+head -n 12 "$out/SUMMARY.txt"

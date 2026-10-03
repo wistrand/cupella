@@ -18,15 +18,21 @@ headless="$tools/ghidra/support/analyzeHeadless"
 [ -f "$lib" ] || { echo "no such file: $lib" >&2; exit 1; }
 lib=$(realpath "$lib")
 
+# the sample dir is everything before the first /raw/; the ABI is the first component
+# after raw/lib/ (a glob * also matches /, so nested paths need the split)
 case "$lib" in
-  "$root"/work/*/raw/lib/*/*)
-    abi=$(basename "$(dirname "$lib")")
-    name_dir=$(dirname "$(dirname "$(dirname "$(dirname "$lib")")")")
-    out_dir="$name_dir/native/$abi" ;;
   "$root"/work/*/raw/*)
-    # an ELF outside lib/ (assets, res): keep raw/ pristine, write under native/other/
     name_dir=${lib%%/raw/*}
-    out_dir="$name_dir/native/other" ;;
+    rel=${lib#"$name_dir"/raw/}
+    case "$rel" in
+      lib/*/*)
+        abi=${rel#lib/}
+        abi=${abi%%/*}
+        out_dir="$name_dir/native/$abi" ;;
+      *)
+        # an ELF outside lib/ (assets, res): keep raw/ pristine, write under native/other/
+        out_dir="$name_dir/native/other" ;;
+    esac ;;
   *) out_dir=$(dirname "$lib") ;;
 esac
 mkdir -p "$out_dir"

@@ -186,14 +186,15 @@ After decompiling, rerun `./cupella structure-leads.py <name>`: native functions
 entry points, coordinators (a bot's main loop), dispatch and handler tables, endless
 loops (attack routines), and decoders (string decryptors called from many places),
 plus a per-capability map. `./cupella xref.py <name> FUN_...` lists a function's callers
-and callees, including functions whose address it takes. On the Mirai-lineage sample
+and callees, including functions whose address it takes. On the DDoS-bot sample
 these found the main function, the attack table, and the string decryptor that pattern
 searches missed.
 
 ## Executables, static binaries, and encrypted strings
 
-Worked example (2026-10-03, report kept locally): a loader APK that copies a static
-32-bit ARM DDoS bot from `assets/` and runs it; the bot reads its C2 from ENS and SNS
+Worked example: [docs/examples/23282313-ddos-bot-loader.md](../docs/examples/23282313-ddos-bot-loader.md)
+(a snapshot from 2026-10-03), a loader APK that copies a static 32-bit ARM DDoS bot
+from `assets/` and runs it; the bot reads its C2 from ENS and SNS
 name records and keeps 37 strings under a custom XOR stream cipher.
 
 - **An ELF outside `lib/`**, especially an executable (the summary says "an
@@ -255,11 +256,11 @@ State these under "Analysis coverage" when they apply:
 - Raw syscalls (`svc` on arm64) bypass the import table. A library with few or no
   imports and `svc` instructions in its code is doing this; search the `--all`
   output for `svc`.
-- Dart AOT (`libapp.so`), IL2CPP, and Hermes bytecode need dedicated tools
-  (blutter, Il2CppDumper, hermes-dec) that are not installed. For those, report what
-  strings and the bundled metadata show and say the logic was not read. Flutter has
-  its own procedure, including blutter for the Dart code:
-  [runbook-flutter.md](runbook-flutter.md).
+- IL2CPP (Unity) needs Il2CppDumper, which is not installed: report what strings and
+  the bundled metadata show and say the logic was not read. Dart AOT (`libapp.so`)
+  and Hermes bytecode have tools in the image: Flutter goes to
+  [runbook-flutter.md](runbook-flutter.md), Hermes to the React Native section of
+  [runbook-analysis.md](runbook-analysis.md).
 - Packed or encrypted libraries cannot be analyzed statically past the loader.
 - Annotations cover arm64. Other ABIs get plain disassembly with direct call names on
   x86 only.

@@ -29,6 +29,7 @@ from elf import JAVA_VM, JNI_ENV, Elf  # noqa: E402
 
 CSTOOL_MODE = {"arm64": "arm64", "x86_64": "x64", "x86": "x32", "arm": "arm"}
 CHUNK = 24000  # bytes per cstool call; the hex argument must stay under the kernel's 128 KiB limit
+MAX_FAILS = 32  # consecutive cstool calls that decode nothing before the rest is emitted raw
 
 
 def cstool(mode, data, addr):
@@ -36,7 +37,13 @@ def cstool(mode, data, addr):
   out = []
   pos = 0
   step = 4 if mode in ("arm64", "arm") else 2 if mode == "thumb" else 1
+  fails = 0
   while pos < len(data):
+    if fails >= MAX_FAILS:  # data, not code: one process per word would take hours
+      for p in range(pos, len(data), step):
+        raw = data[p:p + step]
+        out.append((addr + p, ".byte" if step == 1 else ".word", raw.hex() if step == 1 else raw[::-1].hex()))
+      break
     chunk = data[pos:pos + CHUNK]
     r = subprocess.run(["cstool", mode, chunk.hex(), "%x" % (addr + pos)],
                        capture_output=True, text=True)
@@ -51,9 +58,15 @@ def cstool(mode, data, addr):
       last_end = a - addr + size
     if last_end >= pos + len(chunk):
       pos = last_end
+      fails = 0
+    elif last_end > pos and pos + len(chunk) < len(data) and pos + len(chunk) - last_end <= 16:
+      # an instruction straddles the chunk boundary: decode again from where it starts
+      pos = last_end
+      fails = 0
     else:  # decoder stopped: emit raw bytes and resume after them
       raw = data[last_end:last_end + step]
       out.append((addr + last_end, ".byte" if step == 1 else ".word", raw.hex() if step == 1 else raw[::-1].hex()))
+      fails = 0 if last_end > pos else fails + 1
       pos = last_end + step
   return out
 
@@ -70,8 +83,9 @@ class Disasm:
     for s in e.symtab + e.dynsyms:
       if s.defined and s.is_func and s.size:
         self.sizes[s.value & ~1 if e.machine == "arm" else s.value] = s.size
-    # 32-bit ARM: a function symbol with bit 0 clear is ARM mode, set is Thumb. Addresses
-    # without a symbol (table and init pointers lose the bit) get the file's default mode.
+    # 32-bit ARM: a function symbol with bit 0 clear is ARM mode, set is Thumb. Pointers in
+    # init_array and JNI tables carry the bit too (Elf.thumb_ptrs / arm_ptrs, added below);
+    # other addresses get the file's default mode.
     funcs = [s.value for s in e.symtab + e.dynsyms if e.machine == "arm" and s.defined and s.is_func]
     self.arm_mode = {v for v in funcs if not v & 1}
     self.thumb_mode = {v & ~1 for v in funcs if v & 1}
@@ -87,6 +101,11 @@ class Disasm:
       self.labels.setdefault(a, "init_%d" % i)
     for fn, desc in self.jni.items():
       self.labels.setdefault(fn, "jni_" + desc.split("(")[0])
+    # after _arm_default, which counts symbols only; a symbol's mode wins over a pointer's
+    for v in e.thumb_ptrs - self.arm_mode:
+      self.thumb_mode.add(v)
+    for v in e.arm_ptrs - self.thumb_mode:
+      self.arm_mode.add(v)
 
   def _arm_default(self):
     """Mode for 32-bit ARM code without a function symbol: the majority of the function
@@ -117,7 +136,7 @@ class Disasm:
     if self.e.machine != "arm":
       return ""
     if addr in self.arm_mode or addr in self.thumb_mode:
-      return ", %s mode from its symbol" % self.mode_for(addr)
+      return ", %s mode from its symbol or a pointer to it" % self.mode_for(addr)
     return ", %s mode: %s" % (self.arm_default, self.arm_default_why)
 
   def mode_for(self, addr):

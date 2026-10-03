@@ -101,15 +101,19 @@ def main():
 
   nodes, edges = {target.id: target}, set()
   # callers, breadth first, nearest levels first, capped
-  frontier = [target]
+  frontier, n_callers, cut_up = [target], 0, False
   for _ in range(up):
     nxt = []
     for v in frontier:
       for cid in sorted(callers.get(v.id, ())):
-        if cid not in by_id or len(nodes) > MAX_CALLERS:
+        if cid not in by_id:
+          continue
+        if cid not in nodes and n_callers >= MAX_CALLERS:
+          cut_up = True
           continue
         edges.add((cid, v.id))
         if cid not in nodes:
+          n_callers += 1
           nodes[cid] = by_id[cid]
           if not entry(by_id[cid]):
             nxt.append(by_id[cid])
@@ -186,7 +190,7 @@ def main():
     why = entry(u)
     out.append("- `%s`%s%s" % (u.where.split(" ")[0], "  (target)" if uid == target.id else "",
                                 "  (entry point: %s)" % label(why) if why else ""))
-  if cut or len([u for u in nodes if (u, target.id) in edges]) > MAX_CALLERS:
+  if cut or cut_up:
     out.append("")
     out.append("Cut at %d callers and %d callees; narrow with --up or --down." % (MAX_CALLERS, MAX_CALLEES))
   text = "\n".join(out) + "\n"

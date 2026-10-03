@@ -22,6 +22,7 @@ the caller asks for.
 Instruction widths follow the Dalvik bytecode format table; switch and array
 payloads are skipped by their own size headers. Odex-only opcodes are not handled.
 """
+import functools
 import struct
 
 # width in 16-bit code units, by opcode
@@ -50,6 +51,24 @@ class Method:
     self.new_consts, self.cases = [], {}
 
 
+class DexError(ValueError, IndexError, struct.error):
+  """Malformed dex: a read past the data, a bad index, a string without its NUL. A
+  ValueError, and also an IndexError and struct.error for callers that catch those."""
+
+
+def malformed(f):
+  """Raise DexError for any malformed-data error, so callers can catch one type."""
+  @functools.wraps(f)
+  def g(*a, **k):
+    try:
+      return f(*a, **k)
+    except DexError:
+      raise
+    except (struct.error, IndexError, ValueError) as ex:
+      raise DexError("malformed dex: %s" % ex) from None
+  return g
+
+
 def uleb(buf, p):
   r = s = 0
   while True:
@@ -72,7 +91,9 @@ class Dex:
     self.m_n, self.m_off = u("<II", buf, 0x58)
     self.c_n, self.c_off = u("<II", buf, 0x60)
     self._str, self._mkey = {}, {}
+    self.problems = []  # classes skipped or cut short: (descriptor or index, reason)
 
+  @malformed
   def string(self, i):
     if i not in self._str:
       (p,) = struct.unpack_from("<I", self.buf, self.s_off + 4 * i)
@@ -81,9 +102,11 @@ class Dex:
       self._str[i] = self.buf[p:end].decode("utf-8", "replace")  # MUTF-8, close enough
     return self._str[i]
 
+  @malformed
   def type(self, i):
     return self.string(struct.unpack_from("<I", self.buf, self.t_off + 4 * i)[0])
 
+  @malformed
   def proto(self, i):
     _shorty, ret, poff = struct.unpack_from("<III", self.buf, self.p_off + 12 * i)
     params = []
@@ -92,11 +115,13 @@ class Dex:
       params = [self.type(struct.unpack_from("<H", self.buf, poff + 4 + 2 * k)[0]) for k in range(n)]
     return params, self.type(ret)
 
+  @malformed
   def field(self, i):
     """field key, as Lpkg/Cls;->name:type"""
     c, t, n = struct.unpack_from("<HHI", self.buf, self.f_off + 8 * i)
     return "%s->%s:%s" % (self.type(c), self.string(n), self.type(t))
 
+  @malformed
   def method(self, i):
     """(cls, name, params, ret, key)"""
     if i not in self._mkey:
@@ -107,10 +132,18 @@ class Dex:
     return self._mkey[i]
 
   def classes(self):
+    """(descriptor, class_data offset, superclass index, interfaces offset); a class whose
+    entry or name cannot be read is skipped and recorded in problems"""
     for k in range(self.c_n):
-      cidx, _acc, sup, ifs, _src, _ann, data, _sv = struct.unpack_from("<8I", self.buf, self.c_off + 32 * k)
-      yield self.type(cidx), data, sup, ifs
+      try:
+        cidx, _acc, sup, ifs, _src, _ann, data, _sv = struct.unpack_from("<8I", self.buf, self.c_off + 32 * k)
+        cls = self.type(cidx)
+      except (struct.error, ValueError) as ex:
+        self.problems.append(("class_def %d" % k, str(ex)))
+        continue
+      yield cls, data, sup, ifs
 
+  @malformed
   def supers(self, sup, ifs):
     s = self.type(sup) if sup != 0xFFFFFFFF else None
     out = []
@@ -124,21 +157,24 @@ class Dex:
     if not data:
       return
     b = self.buf
-    sf, p = uleb(b, data)
-    inf, p = uleb(b, p)
-    dm, p = uleb(b, p)
-    vm, p = uleb(b, p)
-    for _ in range(sf + inf):
-      _, p = uleb(b, p)
-      _, p = uleb(b, p)
-    for count in (dm, vm):
-      idx = 0
-      for _ in range(count):
-        d, p = uleb(b, p)
+    try:
+      sf, p = uleb(b, data)
+      inf, p = uleb(b, p)
+      dm, p = uleb(b, p)
+      vm, p = uleb(b, p)
+      for _ in range(sf + inf):
         _, p = uleb(b, p)
-        code, p = uleb(b, p)
-        idx += d
-        yield idx, code
+        _, p = uleb(b, p)
+      for count in (dm, vm):
+        idx = 0
+        for _ in range(count):
+          d, p = uleb(b, p)
+          _, p = uleb(b, p)
+          code, p = uleb(b, p)
+          idx += d
+          yield idx, code
+    except IndexError:  # ran past the end of the file: keep the methods read so far
+      self.problems.append(("class_data at 0x%x" % data, "truncated"))
 
   def decode(self, code, m):
     b = self.buf
@@ -221,9 +257,14 @@ class Dex:
     else:
       return {}
     out = {}
+    budget = 200000  # instructions over all cases: 65535 targets each walking a long body would hang
     for k, t in zip(keys, targets):
       pc, calls = spc + t, []
       while 0 <= pc < n:
+        budget -= 1
+        if budget < 0:
+          return out  # degrade: the cases read so far
+
         unit = struct.unpack_from("<H", b, base + 2 * pc)[0]
         op = unit & 0xFF
         if op == 0 and unit != 0:
@@ -237,6 +278,9 @@ class Dex:
     return out
 
 
+PROBLEMS = []  # (dex path, class, reason) for what load() skipped or cut short
+
+
 def load(paths, want):
   out, hier = {}, {}
   for path in paths:
@@ -245,7 +289,8 @@ def load(paths, want):
     try:
       d = Dex(buf)
       ok = buf[:4] == b"dex\n" and all(o + 4 * k <= len(buf) for o, k in (
-        (d.s_off, d.s_n), (d.t_off, d.t_n), (d.m_off, 2 * d.m_n), (d.c_off, 8 * d.c_n)))
+        (d.s_off, d.s_n), (d.t_off, d.t_n), (d.p_off, 3 * d.p_n), (d.f_off, 2 * d.f_n),
+        (d.m_off, 2 * d.m_n), (d.c_off, 8 * d.c_n)))
     except struct.error:
       ok = False
     if not ok:
@@ -253,16 +298,24 @@ def load(paths, want):
     for cls, data, sup, ifs in d.classes():
       if not want(cls):
         continue
-      hier[cls] = d.supers(sup, ifs)
+      try:
+        hier[cls] = d.supers(sup, ifs)
+      except ValueError as ex:
+        d.problems.append((cls, "supertypes: %s" % ex))
       for idx, code in d.methods_of(data):
-        c, name, params, ret, key = d.method(idx)
+        try:
+          c, name, params, ret, key = d.method(idx)
+        except ValueError as ex:
+          d.problems.append((cls, "method %d: %s" % (idx, ex)))
+          continue
         m = Method(c, name, params, ret)
         m.code = bool(code)
         m.dex, m.code_off = d, code
         if code:
           try:
             d.decode(code, m)
-          except (struct.error, IndexError):
+          except (struct.error, IndexError, ValueError):
             pass  # a malformed or unusual method: keep what was decoded
         out[key] = m
+    PROBLEMS.extend((path, what, why) for what, why in d.problems)
   return out, hier

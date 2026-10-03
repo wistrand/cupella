@@ -49,7 +49,9 @@ analysis, or when the answer needs more than a few cited lines.
   in full. A child that is itself a known sample (identical SHA-256) is a finding;
   report the link.
 - `work/_*/` directories are not samples: `_reference` (download cache of
-  `reference-check.py`), `_gate` (gate metrics), and the agent benchmark runs
+  `reference-check.py`), `_gate` (gate metrics), `_tools` (sample lists for the
+  tool comparison), `_previous` (agent work moved aside by `run-decryptor.sh` when a
+  child number now holds a different payload), and the agent benchmark runs
   (`_ghera-blind*`, `_maleval-agent`, `_vulnapps`).
 
 ## Stages
@@ -160,8 +162,8 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
 
 - When the harness cannot restrict a subagent's tools as the role says, the role's
   rules go into the prompt and the report says the restriction was by instruction only.
-- Decryption agents may run only `./cupella run-decryptor.sh <name>` and the native
-  scripts. Their output is `work/<name>/decrypt/` (`decrypt.py`, `NOTES.md`,
+- Decryption agents may run only `./cupella run-decryptor.sh <name>`,
+  `./cupella dex-disasm.py`, and the native scripts. Their output is `work/<name>/decrypt/` (`decrypt.py`, `NOTES.md`,
   `out/`, `outputs.txt`, and `PROGRESS.md`, written as the agent goes: read it when
   the user asks for status). With string obfuscation, read the child's code in
   `jadx-strings/` (same line numbers as `jadx/sources/`, plaintext in comments) and the children it unpacks. Read `NOTES.md` before citing a
@@ -178,7 +180,8 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
 - Every subagent writes a progress file as it works: decryption agents
   `work/<name>/decrypt/PROGRESS.md`, other agents on a sample
   `work/<name>/progress/<role>.md` (role such as `verify`, `reader-c2`), benchmark
-  agents `PROGRESS.md` in their output directory. Name the file in the prompt. When the
+  agents the path named in their `prompts/bench/` prompt (under the run's
+  `work/_*/progress/`). Name the file in the prompt. When the
   user asks for status, read these files; never read an agent's transcript.
 - Run independent subagents in parallel (decryption of separate layers cannot be, as
   each needs the previous layer's output).
@@ -210,7 +213,7 @@ could not be read, and the verification result. Do not repeat the report.
 ## Reruns and updates
 
 - `unpack.sh` skips steps already done; `-f` redoes them (after a script change or a
-  new tool version) and keeps `decrypt/` and `progress/`. `scan.sh` always rewrites its outputs.
+  new tool version) and keeps `decrypt/`, `progress/`, and `scan-scope.txt`. `scan.sh` always rewrites its outputs.
 - Never rerun `unpack.sh -f` or `scan.sh` on benchmark samples while `./cupella gate` runs: it
   measures the files you are rewriting (a FAIL on 2026-10-02 came from exactly that).
 - Rerunning an analysis updates `reports/<name>.md` in place, but the analysis itself
@@ -219,7 +222,9 @@ could not be read, and the verification result. Do not repeat the report.
   is dropped or restored. Recheck citations (line numbers move when jadx changes) and
   rerun cite-check.
 - `work/` can be deleted at any time and regenerated, except agent outputs:
-  `work/<name>/decrypt/` and `work/_*/` benchmark runs need agent time to recreate.
+  `work/<name>/decrypt/`, `work/<name>/progress/`, and `work/_*/` benchmark runs need
+  agent time to recreate. `unpack.sh -f` keeps these and `scan-scope.txt` (a scan scope
+  given by hand).
 
 ## Improving the scripts
 

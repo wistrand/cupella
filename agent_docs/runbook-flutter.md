@@ -150,7 +150,8 @@ callees.
 
 ## Step 4: the Java side
 
-Run `scripts/scan.sh <name> .` (the dex is small). Check:
+Run `./cupella scan.sh <name> .` (the dex is small). `.` is saved as the scope for later
+scans (`scan-scope.txt`); `./cupella scan.sh <name> --default-scope` resets it. Check:
 
 - the manifest as for any app: permissions, exported components, intent filters;
 - each registered plugin: a plugin is native capability the Dart code can call
@@ -166,7 +167,7 @@ from Dart through `dart:ffi` (look for the `ffi` package and a binding package i
 Step 1), so there are no Java callers to map; their exports are the interface.
 `libflutter.so` imports sockets, `fork`/`execvp`, and `dlopen` because the Dart
 runtime implements `dart:io` there; that is normal and says nothing about the app.
-Run `scripts/reference-check.py <name>`: it compares `libflutter.so` byte for byte
+Run `./cupella reference-check.py <name> > work/<name>/reference-check.txt`: it compares `libflutter.so` byte for byte
 with the official engine artifact, and checks libraries built from pub.dev packages
 against the package sources (see [runbook-native.md](runbook-native.md) "establish
 provenance"). Only an "IDENTICAL" result justifies calling the engine stock.

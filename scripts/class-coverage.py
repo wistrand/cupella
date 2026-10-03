@@ -93,7 +93,7 @@ def main():
     # hold nothing to read
     outer = {n for n in defs if "$" not in n.rsplit(".", 1)[-1] and n in has_methods}
     missing = sorted(n for n in outer if n not in have and n.rsplit(".", 1)[-1] not in have
-                     and not n.rsplit(".", 1)[-1].startswith("R"))
+                     and not re.match(r"R(\$|$)", n.rsplit(".", 1)[-1]))
     print("%d classes in %d dex files; %d outer classes with methods; %d have no file in jadx/sources/ (dropped, or renamed without a note)" % (
       len(defs), len({f for v in defs.values() for f in v}), len(outer), len(missing)))
     for n in missing[:SHOW]:

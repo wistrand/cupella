@@ -7,9 +7,8 @@ useful lead points at them in the vulnerable app, and a discriminating lead is g
 from the same method in the fixed app. Manifest and resource-XML fixes are counted
 separately: there the question is whether manifest-summary.txt changes with the fix.
 
-For each pair and each lead source (scan.txt, structure-leads.txt):
-  hit     a lead line names a changed method of the vulnerable app (sources: scan.txt,
-          structure-leads.txt, flows.txt)
+For each pair and each lead source (scan.txt, structure-leads.txt, flows.txt):
+  hit     a lead line names a changed method of the vulnerable app
   fixed   the same section still names that method in the fixed app (the lead does
           not tell the two apart)
 and for manifest fixes:

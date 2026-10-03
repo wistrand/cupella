@@ -19,7 +19,8 @@ Usage: scripts/apkunzip.py <apk> <out-dir> [--repair <clean.apk>]
   one line per anomaly class with counts. Entries nested under a name that is also a
   file go to <out-dir>/_shadowing/ so the real file keeps its path. --repair also writes a copy with clean
   headers, for tools such as apktool, when any anomaly was found (removed otherwise).
-Exit status 0 when every entry was read.
+Exit status 0 when every entry was read and written, 1 when some were not, 2 when the
+file cannot be opened as a ZIP at all.
 """
 import os
 import struct
@@ -39,15 +40,25 @@ class TooLarge(Exception):
   pass
 
 
-def read_entry(z, fp, info, limit=ENTRY_MAX):
+def read_entry(z, fp, info, limit=ENTRY_MAX, fsize=None):
   """bytes of an entry, read from its local header, as Android would"""
+  if fsize is not None and not 0 <= info.header_offset < fsize:
+    raise ValueError("local header outside the file")
   fp.seek(info.header_offset)
   hdr = fp.read(30)
   if len(hdr) < 30 or hdr[:4] != b"PK\x03\x04":
     raise ValueError("bad local header")
   name_len, extra_len = struct.unpack("<HH", hdr[26:30])
-  fp.seek(info.header_offset + 30 + name_len + extra_len)
-  data = fp.read(info.compress_size)
+  start = info.header_offset + 30 + name_len + extra_len
+  fp.seek(start)
+  # a zip64 size can be absurd: never ask for more than the file holds (and, for stored
+  # data, more than the limit allows)
+  n = info.compress_size
+  if fsize is not None:
+    n = min(n, max(0, fsize - start))
+  if info.compress_type != zipfile.ZIP_DEFLATED:
+    n = min(n, limit + 1)
+  data = fp.read(n)
   if info.compress_type == zipfile.ZIP_DEFLATED:
     d = zlib.decompressobj(-15)
     out = d.decompress(data, limit + 1)
@@ -71,7 +82,14 @@ def main():
     args = args[:i] + args[i + 2:]
   apk, out = args[0], args[1]
   out_abs = os.path.abspath(out)
-  z = zipfile.ZipFile(apk)
+  try:
+    z = zipfile.ZipFile(apk)
+  except Exception as ex:  # BadZipFile, UnicodeDecodeError, struct.error, ...: no usable central directory
+    msg = "%s: %s" % (type(ex).__name__, ex)
+    print("apkunzip: cannot open %s as a ZIP archive (%s)" % (apk, msg), file=sys.stderr)
+    print("1 archive could not be opened as a ZIP (nothing extracted)")
+    print("  e.g. %s" % repr(msg)[1:-1][:200])
+    sys.exit(2)
   anomalies, examples = {}, {}
 
   def note(kind, name=None):
@@ -82,15 +100,24 @@ def main():
   failed = 0
   total = 0
   rz = zipfile.ZipFile(repair, "w") if repair else None
-  seen = set()
+  seen, seen_paths = set(), set()
   files = {i.filename for i in z.infolist() if not i.is_dir()}
+
+  def canonical(info):
+    return info.filename == os.path.normpath(info.filename)
+
+  # Android looks names up exactly, so "./AndroidManifest.xml" or "x/../AndroidManifest.xml"
+  # is never what it reads, yet it lands on the same output path. Write canonical names
+  # first so a decoy cannot take the real entry's place; among equals the first wins.
+  entries = sorted(z.infolist(), key=lambda i: not canonical(i))
 
   def shadowed(name):
     parts = name.split("/")
     return any("/".join(parts[:k]) in files for k in range(1, len(parts)))
 
   with open(apk, "rb") as fp:
-    for info in z.infolist():
+    fsize = os.fstat(fp.fileno()).st_size
+    for info in entries:
       if info.flag_bits & 0x1:
         note("entries with the encryption flag set (Android ignores it)", info.filename)
       if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
@@ -107,14 +134,14 @@ def main():
         continue
       room = TOTAL_MAX - total
       try:
-        data = read_entry(z, fp, info, min(ENTRY_MAX, room))
+        data = read_entry(z, fp, info, min(ENTRY_MAX, room), fsize)
       except TooLarge:
         if room < ENTRY_MAX:
           note("extraction stopped at the total size limit (later entries not extracted; decompression bomb?)", info.filename)
           break
         note("entries over the size limit (not extracted, left out of the repaired copy; decompression bomb?)", info.filename)
         continue
-      except (ValueError, zlib.error, OSError):
+      except (ValueError, zlib.error, OSError, OverflowError):
         note("entries that could not be read", info.filename)
         failed += 1
         continue
@@ -129,9 +156,19 @@ def main():
       if not path.startswith(out_abs + os.sep):
         note("entry paths escaping the archive (not extracted)", info.filename)
         continue
-      os.makedirs(os.path.dirname(path), exist_ok=True)
-      with open(path, "wb") as f:
-        f.write(data)
+      if path in seen_paths:
+        note("duplicate entry names after path normalization (first canonical name kept; Android looks names up exactly)",
+             info.filename)
+        continue
+      seen_paths.add(path)
+      try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+          f.write(data)
+      except OSError as ex:  # name too long, file/directory collision, ...
+        note("entries that could not be written (%s)" % (ex.strerror or type(ex).__name__), info.filename)
+        failed += 1
+        continue
       if rz and not rel.startswith("_shadowing/"):
         zi = zipfile.ZipInfo(info.filename, date_time=(1980, 1, 1, 0, 0, 0))
         zi.compress_type = zipfile.ZIP_DEFLATED

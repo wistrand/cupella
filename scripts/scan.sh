@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runbook stage 4: pattern searches over decompiled sources. Every hit is a lead to
+# Workflow stage 2: pattern searches over decompiled sources. Every hit is a lead to
 # read, not a finding. Writes work/<name>/scan.txt, then runs jadx-retry.sh,
 # structure-leads.py, and flows.py for the same scope.
 #

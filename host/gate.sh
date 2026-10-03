@@ -28,7 +28,8 @@ rescan() {
   if [ -d data/maleval ]; then
     find data/maleval -name '*.apk' -printf '%f\n' | sed 's/\.apk$//' >> "$out/names.txt"
   fi
-  xargs -P "$jobs" -I{} sh -c './cupella scan.sh {} > /dev/null 2>&1 || ./cupella scan.sh {} > /dev/null 2>&1 || echo "scan failed: {}"' < "$out/names.txt"
+  # names reach sh as "$1", never as part of the script text
+  xargs -P "$jobs" -I{} sh -c './cupella scan.sh "$1" > /dev/null 2>&1 || ./cupella scan.sh "$1" > /dev/null 2>&1 || echo "scan failed: $1"' _ {} < "$out/names.txt"
   for r in reports/*.md; do
     n=$(basename "$r" .md)
     [ -d "work/$n" ] || continue

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runbook stages 1-3 for one APK: identity, raw unpack, fallback decodes, apktool, jadx.
+# Workflow stage 1 for one APK: identity, raw unpack, fallback decodes, apktool, jadx.
 # Output goes to work/<name>/; summaries are written to work/<name>/triage.txt,
 # manifest-summary.txt, and native-summary.txt.
 # Steps whose output already exists are skipped; pass -f to redo everything.
@@ -17,10 +17,13 @@ tools=${APK_TOOLS:?not in the analysis container: run this as ./cupella unpack.s
 apk=$(realpath "$apk")
 name=$(basename "$apk" .apk)
 out="$root/work/$name"
+# -f keeps agent work, which no script regenerates: decrypt/ (decryptor, notes, outputs),
+# progress/ (agent progress files), and scan-scope.txt (the agent's scope, reused by scan.sh)
+prune() { # <sample dir>: remove everything but agent work
+  find "$1" -mindepth 1 -maxdepth 1 ! -name decrypt ! -name progress ! -name scan-scope.txt -exec rm -rf {} +
+}
 if [ "$force" = 1 ] && [ -d "$out" ]; then
-  # keep agent work (decrypt/: decryptor, notes, outputs; progress/: agent progress files),
-  # which no script regenerates
-  find "$out" -mindepth 1 -maxdepth 1 ! -name decrypt ! -name progress -exec rm -rf {} +
+  prune "$out"
 fi
 mkdir -p "$out"
 # Extraction writes no symlinks, but a tool might. A symlink under work/ could point a
@@ -116,6 +119,8 @@ if [ ! -f "$out/embedded.txt" ]; then
   python3 "$root/scripts/embedded.py" "$name" > "$out/embedded.list" || echo "embedded.py failed"
   : > "$out/embedded.txt"
   k=0
+  fflag=()
+  [ "$force" = 1 ] && fflag=(-f)
   while IFS=$'\t' read -r kind size rel rest; do
     k=$((k + 1))
     [ "$k" -le 20 ] || { echo "more than 20 embedded containers; the rest are listed in embedded.list only"; break; }
@@ -126,15 +131,29 @@ if [ ! -f "$out/embedded.txt" ]; then
       python3 -c 'import sys, zipfile
 with zipfile.ZipFile(sys.argv[2], "w") as z, open(sys.argv[1], "rb") as f:
   z.writestr(zipfile.ZipInfo("classes.dex", (1980, 1, 1, 0, 0, 0)), f.read())' \
-        "$out/raw/$rel" "$out/embedded/$child.apk" || { echo "could not wrap $rel"; continue; }
+        "$out/raw/$rel" "$out/embedded/$child.apk" < /dev/null || { echo "could not wrap $rel"; continue; }
     else
       cp "$out/raw/$rel" "$out/embedded/$child.apk"
     fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$child" "$kind" "$size" "$rel" "$rest" >> "$out/embedded.txt"
     echo "== embedded $rel ($kind): unpacking as $child"
-    "$root/scripts/unpack.sh" "$out/embedded/$child.apk" > "$out/embedded/$child.unpack.log" 2>&1 \
+    # -f reaches the children too: their work/<child>/ lies outside $out
+    "$root/scripts/unpack.sh" ${fflag[@]+"${fflag[@]}"} "$out/embedded/$child.apk" > "$out/embedded/$child.unpack.log" 2>&1 < /dev/null \
       || echo "unpack of embedded $rel failed, see embedded/$child.unpack.log"
   done < "$out/embedded.list"
+fi
+if [ "$force" = 1 ]; then
+  # children from an earlier run that this run did not produce (numbered above the new
+  # count, or skipped now) are stale: pruned like $out, removed when no agent work is left
+  for d in "$root/work/$name".emb[0-9]*; do
+    [ -d "$d" ] || continue
+    c=$(basename "$d")
+    [[ ${c#"$name".emb} =~ ^[0-9]+$ ]] || continue
+    awk -F'\t' -v c="$c" '$1 == c { f = 1 } END { exit !f }' "$out/embedded.txt" 2>/dev/null && continue
+    prune "$d"
+    rmdir "$d" 2>/dev/null && echo "removed stale child work/$c" \
+      || echo "stale child work/$c: kept only its agent work (decrypt/, progress/, scan-scope.txt)"
+  done
 fi
 
 if [ ! -f "$out/apkid.txt" ]; then
@@ -174,7 +193,7 @@ sweep_links
   python3 "$root/scripts/apksig-verify.py" "$apk" 2>&1 | grep -E '=> |^v1|RESULT|FAIL' || true
   echo
   echo "## Top-level entries"
-  ls -A "$out/raw"
+  ls -A "$out/raw" 2>/dev/null || echo "raw/ missing: extraction failed (see zip-anomalies.txt)"
   echo
   echo "## Dex"
   ls -l "$out"/raw/classes*.dex 2>/dev/null | awk '{print $5, $NF}' \

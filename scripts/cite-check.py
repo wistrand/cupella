@@ -8,18 +8,22 @@ Reads reports/<name>.md and checks, in backticked spans:
             real paths; a full `work/...` path into a child sample (work/<name>.dec1/)
             or a related sample must exist as given; `.dec1/...` and `.emb1/...` are
             short for work/<name>.dec1/... and work/<name>.emb1/...
-  lines     `Foo.java:120-130` lies within the file
+  lines     `Foo.java:120-130` lies within the file (lines start at 1; a partial path
+            that matches several files must fit all of them, or it is ambiguous)
   methods   `Cls.meth` (or `meth()`) directly followed by a line citation of Cls.java,
             as in "`Foo.bar` (`Foo.java:120`)": the cited line lies inside a method
             of that name
   quotes    "quoted text" directly followed by a line citation: the text occurs on
-            the cited lines (give or take one line)
+            the cited lines (give or take one line); up to 80 characters its first and
+            last 40 must, beyond that all of it
   functions native (FUN_..., jni_..., JNI_OnLoad) and Dart (`Class::name`) function
-            names exist in the decompiled output
+            names exist in the decompiled output (a native name with no native/
+            output is a problem)
 
 Device paths (/data/..., /system/...), URLs, globs, and library names (.so) are not
-checked. A .dart path that is not a file passes when flutter-summary.txt lists it
-(blutter merges Dart sources into one file per package).
+checked. A .dart path that is not a file passes when flutter-summary.txt lists it as
+that path or a path ending in /<cited> (blutter merges Dart sources into one file per
+package); with a :line it is a problem, since the line cannot be checked.
 A problem is a citation to fix or to explain; "ok" means the cited place exists, not
 that it says what the report claims.
 
@@ -45,8 +49,9 @@ class Tree:
     # the sample and its child samples (decrypted and embedded payloads, work/<name>.dec<k>/
     # and work/<name>.emb<k>/), whose files report short paths may cite
     parent = os.path.dirname(work)
+    child = re.compile(re.escape(os.path.basename(work)) + r"(?:\.(?:dec|emb)\d+)+$")
     roots = [work] + sorted(os.path.join(parent, d) for d in os.listdir(parent)
-                            if d.startswith(os.path.basename(work) + ".") and os.path.isdir(os.path.join(parent, d)))
+                            if child.match(d) and os.path.isdir(os.path.join(parent, d)))
     for root in roots:
       for dp, dn, fn in os.walk(root):
         dn[:] = sorted(d for d in dn if not d.startswith("."))
@@ -77,7 +82,10 @@ class Tree:
       return []
     if rel not in self._lines:
       with open(os.path.join(self.work, rel), errors="replace") as f:
-        self._lines[rel] = f.read().split("\n")
+        lines = f.read().split("\n")
+      if lines and lines[-1] == "":
+        lines.pop()  # the file ends with a newline: no line after it
+      self._lines[rel] = lines
     return self._lines[rel]
 
 
@@ -108,11 +116,14 @@ def main():
   has_native = any(u.kind == "native" for u in others)
   has_dart = any(u.kind == "dart" for u in others)
 
-  dart_sources = ""
+  dart_sources = set()
   fs = os.path.join(work, "flutter-summary.txt")
   if os.path.exists(fs):
     with open(fs, errors="replace") as f:
-      dart_sources = f.read()
+      dart_sources = set(re.findall(r"[\w$./-]+\.dart\b", f.read()))
+
+  def dart_listed(path):
+    return any(d == path or d.endswith("/" + path) for d in dart_sources)
 
   problems, ok = [], 0
 
@@ -132,18 +143,32 @@ def main():
       if path.startswith("/") or "%" in path:
         continue
       rels = tree.resolve(path)
-      if not rels and path.endswith(".dart") and path in dart_sources:
-        ok += 1  # a Dart source file name from the snapshot; blutter merges files
+      if not rels and path.endswith(".dart") and dart_listed(path):
+        if spec:  # the listing has names only; a line in it cannot be checked
+          problem(span.start(), path + spec, "line unverifiable: Dart source is listed in "
+                  "flutter-summary.txt but has no file under work/%s/; cite the blutter file" % name)
+        else:
+          ok += 1  # a Dart source file name from the snapshot; blutter merges files
         continue
       if not rels:
         if "/" in path or spec or path.endswith((".java", ".c", ".dart", ".smali")):
           problem(span.start(), path + spec, "no such file under work/%s/" % name)
         continue
       if spec:
-        bad = [(a, b) for a, b in ranges(spec) if not any(b <= len(tree.lines(r)) for r in rels)]
-        if bad:
+        rs = ranges(spec)
+        wrong = [(a, b) for a, b in rs if a < 1 or a > b]
+        if wrong:
+          problem(span.start(), path + spec, "invalid line range %d-%d" % wrong[0])
+          continue
+        fits = [r for r in rels if all(b <= len(tree.lines(r)) for _a, b in rs)]
+        if not fits:
+          bad = [(a, b) for a, b in rs if not any(b <= len(tree.lines(r)) for r in rels)] or rs
           problem(span.start(), path + spec, "line %d beyond end of file (%d lines)" % (
             bad[0][1], max(len(tree.lines(r)) for r in rels)))
+          continue
+        if len(fits) < len(rels):
+          problem(span.start(), path + spec, "ambiguous: %d files match and the lines fit only "
+                  "%s; cite a longer path" % (len(rels), ", ".join(fits[:3])))
           continue
       ok += 1
 
@@ -181,7 +206,7 @@ def main():
     if not rels:
       continue
     q = norm(quote)
-    heads = {q[:40], q[-40:]}
+    heads = {q[:40], q[-40:]} if len(q) <= 80 else {q}
     found = False
     for r in rels:
       lines = tree.lines(r)
@@ -197,8 +222,8 @@ def main():
   # native and Dart function names
   for m in re.finditer(r"\b(FUN_[0-9a-f]{6,16}|jni_\w+|JNI_OnLoad)\b", report):
     if not has_native:
-      break
-    if m.group(1) in native_names:
+      problem(m.start(), m.group(1), "cites native function but no native/ output in work/%s/" % name)
+    elif m.group(1) in native_names:
       ok += 1
     else:
       problem(m.start(), m.group(1), "no such function in work/%s/native/" % name)

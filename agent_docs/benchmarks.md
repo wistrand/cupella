@@ -18,7 +18,7 @@ at the right code); agent benchmarks measure what an agent reports after reading
 
 | Dataset | Where | Answer key | Script |
 |---------|-------|------------|--------|
-| Ghera: 60 small apps, each a known vulnerability, as a vulnerable ("benign") and a fixed ("secure") build | `data/ghera/`, READMEs in `bench/ghera/`; APKs from Bitbucket `secure-it-i/android-app-vulnerability-benchmarks` (the GitHub fork has no LFS content) | the methods the fix changed; manifest or res/xml changes | `fix-eval.py` |
+| Ghera: 60 small app pairs (59 scored in every result below; why one is left out is not recorded), each a known vulnerability, as a vulnerable ("benign") and a fixed ("secure") build | `data/ghera/`, READMEs in `bench/ghera/`; APKs from Bitbucket `secure-it-i/android-app-vulnerability-benchmarks` (the GitHub fork has no LFS content) | the methods the fix changed; manifest or res/xml changes | `fix-eval.py` |
 | MalEval: 230 malware (MalRadar and newer) and 25 benign apps | `data/maleval/{malradar,new,benign}/`, labels in `bench/maleval/info/`, vendor-report annotations in `bench/maleval/reports/`; Hugging Face `Xinzxr/MalEval`, revision `a5bd8d8` | per-sample behavior labels (Remote Control, Privacy Stealing, SMS/CALL, ...), no function-level labels | `bench-maleval.py` |
 | Deliberately vulnerable apps: InsecureBankv2, OVAA, InsecureShop, AndroGoat | `data/vulnapps/` from each project's GitHub releases; READMEs at the same release tag in `bench/vulnapps/` | the vulnerability list in each README, taken by the scorer (`work/_vulnapps/key-<app>.txt`) | agent scoring, `prompts/bench/vulnapp-*.md` |
 | The five analyzed apps | `data/`, `reports/` | functions cited in each report's Findings | `lead-eval.py` |
@@ -63,8 +63,8 @@ authentication logic), so a rerun measures them too.
 - Never put both apps of a Ghera pair in one batch, and never let analysis agents read
   `work/_ghera-blind/key.json`, `bench/`, or `data/`.
 - Ghera: `./cupella bench-ghera-blind.py <seed>` makes blinded copies under new ids and the
-  key; split `key.json` into batches with no pair in one batch; one agent per batch
-  with `ghera-analyze.md`; then `./cupella bench-ghera-score.py packets <seed>`, four scorers
+  key; the main agent then writes `work/_ghera-blind/batches.json` from `key.json`
+  (a JSON list of lists of sample ids, no pair in one list); one agent per batch with `ghera-analyze.md`; then `./cupella bench-ghera-score.py packets <seed>`, four scorers
   with `ghera-score.md`, and `./cupella bench-ghera-score.py tally`. Move the previous
   `work/_ghera-blind/` aside first to keep it for comparison.
 - MalEval slice: the selection is `work/_maleval-agent/selection.json` (20 malware from
@@ -151,7 +151,8 @@ with code evidence; scored by `bench-maleval-agent.py` (`work/_maleval-agent/sco
 - Behaviors: recall 65%, precision 70% against the labels (56 of 86 labeled behaviors
   claimed; 80 claimed). Remote Control and Ransom precision 100%; Tricky Behavior and
   Privilege Escalation over-claimed (52%, 50% precision).
-- Every one of the 83 evidence paths exists.
+- Every one of the 83 evidence paths exists (paths are counted per citation, not per
+  behavior, so this count differs from the 80 behaviors claimed).
 - Most misses are code the agent could not read and said so: payloads encrypted in
   assets (Faketoken, Octo, Coper, ZNIU), encrypted string tables (Rotexy, DoubleLocker),
   unanalyzed native libraries. Labels describe the family from vendor reports, so some
@@ -286,11 +287,16 @@ lead files name 38 (63%), Quark leads 23 (38%), only Quark 5, only the existing 
 
 - Every agent benchmark is scored by a model, not a person, and has run once or twice;
   differences of one or two items are within run-to-run noise.
-- The Ghera checklist was written from Ghera's own misses; the untouched pairs are the
-  fair measure of it.
+- The Ghera checklist was written from Ghera's own misses, so the Ghera result is
+  optimistic; the untouched pairs are the fair measure of it. A held-out set is open
+  work ([further-work.md](further-work.md), "Measurement").
+- Cost: minutes per app for the agent, and hundreds of thousands to over a million
+  tokens for a full analysis of a real app (subagents on 2026-10-03: about 0.3M on a
+  small bot loader, about 1.4M on a two-stage banking RAT; one reader agent on one area: 100k to 265k tokens;
+  verification of one report: 125k to 280k; budget table in [workflow.md](workflow.md)),
+  against seconds for the scanners.
 - The vulnerable apps are public and well known; their package names cannot be
   hidden, so part of the result may be recall from training.
-
 - MalEval labels are per app. A code lead for "SMS/CALL" means some SMS API use in
   scope, not that the lead is the malicious code.
 - The benign column is a lead rate, not a false-positive rate: benign apps read

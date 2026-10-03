@@ -36,6 +36,7 @@
 <section id="what">
   <h2>Output</h2>
   <p>One markdown report per APK: identity and signing, permissions and what uses them, components, network, data handling, native code, findings, indicators, open questions. Every finding cites a path and line under <code>work/</code>.</p>
+  <p>Example: <a href="examples/23282313-ddos-bot-loader.md">a report on a loader APK around a native DDoS bot</a> that finds its server through blockchain name records (snapshot from 2026-10-03).</p>
   <p>Before a report counts as done, a script checks that every citation exists, and a second agent tries to refute each claim against the code. On the latest BTMOB report that second pass found 1 wrong and 6 overstated claims out of 47; they were fixed before the report was final.</p>
   <p>Features whose permission the manifest does not request, or whose native library the APK does not ship, are listed as present but inert. The scan flags both cases.</p>
 </section>
@@ -57,7 +58,7 @@
       <h3>Use something else for</h3>
       <ul class="plain">
         <li>Scanning many apps, or a gate in CI: rule-based scanners such as MobSF and Quark-Engine take seconds per app without a model. Cupella takes minutes and many thousands of tokens per app.</li>
-        <li>A quick malicious-or-not verdict: Cupella describes behavior and gives no verdict of its own.</li>
+        <li>A quick malicious-or-not verdict: a Cupella report describes behavior and gives no verdict. (The MalEval benchmark prompt asks the agent for one; that is where the malware-flagged numbers below come from.)</li>
         <li>Behavior that only shows at run time: keys made at run time, code or configuration fetched from a server. That needs dynamic analysis.</li>
         <li>Code you may not send to a hosted model: the agent reads excerpts of the decompiled code.</li>
         <li>iOS or other formats: only the Android front end exists.</li>
@@ -111,7 +112,7 @@
   <p>Deliberately vulnerable apps (InsecureBankv2, OVAA, InsecureShop, AndroGoat): 85 of 89 listed vulnerabilities found. MalEval samples with encrypted code: behavior recall 50% before decryption, 66% after.</p>
   <figure><div class="fig-scroll"><svg viewBox="0 0 820 150" role="img" aria-labelledby="dc-t"><title id="dc-t">Six encrypted MalEval samples: behavior recall and precision before and after static decryption</title><line x1="170" y1="14" x2="170" y2="116" class="s-grid"/><text x="170" y="134" class="s-m" text-anchor="middle">0%</text><line x1="290" y1="14" x2="290" y2="116" class="s-grid"/><text x="290" y="134" class="s-m" text-anchor="middle">20%</text><line x1="410" y1="14" x2="410" y2="116" class="s-grid"/><text x="410" y="134" class="s-m" text-anchor="middle">40%</text><line x1="530" y1="14" x2="530" y2="116" class="s-grid"/><text x="530" y="134" class="s-m" text-anchor="middle">60%</text><line x1="650" y1="14" x2="650" y2="116" class="s-grid"/><text x="650" y="134" class="s-m" text-anchor="middle">80%</text><line x1="770" y1="14" x2="770" y2="116" class="s-grid"/><text x="770" y="134" class="s-m" text-anchor="middle">100%</text><text x="158" y="40" class="s-t" text-anchor="end">recall</text><rect x="170" y="22" width="300" height="14" class="s-bar"/><text x="476" y="33" class="s-m">before 50%</text><rect x="170" y="40" width="396" height="14" class="s-bar-us"/><text x="572" y="51" class="s-num">after 66%</text><text x="158" y="88" class="s-t" text-anchor="end">precision</text><rect x="170" y="70" width="408" height="14" class="s-bar"/><text x="584" y="81" class="s-m">before 68%</text><rect x="170" y="88" width="444" height="14" class="s-bar-us"/><text x="620" y="99" class="s-num">after 74%</text></svg></div><figcaption>The six MalEval samples whose code or strings were encrypted, before and after the decryption stage.</figcaption></figure>
   <p>Quark-Engine was also tested as a lead source for Cupella. Its matches restricted to an app's own code fired on none of the 5 benign apps, and they pointed at 5 functions the agent cited that Cupella's own leads missed. Wiring them into the scan is open.</p>
-  <p class="small">Caveats: Quark-Engine has rules for malware behavior and none for vulnerabilities, so it was not scored on Ghera (n/a). On MalEval it crashed on 2 of the 25 samples, whose ZIP entries are marked encrypted to break tools, and those count as nothing found. Mapped to behavior classes, its reports named no remote control, banking, ransom, ads, or privilege escalation, though its rule matches did point at code behind some of these (the lead-source test above). The tools' MalEval output was mapped to behavior classes by a model. The MalEval slice is 25 samples. The vulnerable apps are well known, so a model may partly remember them. The scanners take seconds per app; Cupella takes minutes and many thousands of tokens.</p>
+  <p class="small">Caveats: Quark-Engine has rules for malware behavior and none for vulnerabilities, so it was not scored on Ghera (n/a). On MalEval it crashed on 2 of the 25 samples, whose ZIP entries are marked encrypted to break tools, and those count as nothing found. Mapped to behavior classes, its reports named no remote control, banking, ransom, ads, or privilege escalation, though its rule matches did point at code behind some of these (the lead-source test above). The tools' MalEval output was mapped to behavior classes by a model. The MalEval slice is 25 samples. The Ghera checklist in the runbook was written from Ghera's own misses, so that result is optimistic; a held-out set is open work. The vulnerable apps are well known, so a model may partly remember them. Every agent result was scored by a model. The scanners take seconds per app; Cupella takes minutes, and a full analysis of a real app hundreds of thousands of tokens (one reader agent on one area: 100k to 265k tokens; verifying one report: 125k to 280k).</p>
 </section>
 
 <section id="safety">
@@ -119,8 +120,9 @@
   <ul class="plain">
     <li>Samples are parsed only in a container with no network, no capabilities and a read-only root, under memory, process, file-size and time limits.</li>
     <li>Extraction refuses entries that would land outside the sample's directory, symlink entries and decompression bombs. <code>./cupella setup</code> tests this before first use.</li>
-    <li>Agent-written decryptors are linted (no exec, no network, no subprocess except <code>openssl</code>) and run with only their output directory writable.</li>
-    <li>Subagents that read sample-derived text get no shell, or only listed commands, where the harness can enforce it.</li>
+    <li>Agent-written decryptors run in a container with no network and only their output directory writable; that container is the boundary. A lint (no exec, no subprocess, no network modules) is a best-effort filter in front of it, not a sandbox.</li>
+    <li>Subagents that read sample-derived text get no shell, or a shell limited to listed commands. No harness so far enforces that command list; it holds by instruction. The host permission rules in <code>.claude/settings.json</code> are prefix matches that a full path or <code>bash -c</code> gets around.</li>
+    <li>The agent itself reads sample-derived text on the host: for live malware, run the harness session in a VM or under a dedicated user account.</li>
     <li>Text in a sample that addresses the agent goes into the report as a finding. Names and addresses from a sample are never contacted.</li>
   </ul>
 </section>
@@ -136,9 +138,9 @@ claude                       # or another coding agent, started here</code></pre
 <pre><code>./cupella setup --workspace ~/cases/acme   # own data/, work/, reports/; read-only copies of the docs
 cd ~/cases/acme</code></pre>
   <h3>Harnesses</h3>
-  <p>Instructions are in <code>AGENTS.md</code>, subagent roles in <code>roles/</code>. Claude Code gets generated agent types and permission rules, and has run all analyses and benchmarks so far. Codex CLI has run analyses in a workspace; Gemini CLI and Cursor have setup notes and are untested.</p>
+  <p>Instructions are in <code>AGENTS.md</code>, subagent roles in <code>roles/</code>. Claude Code gets generated agent types and permission rules, and ran all benchmarks and subagent stages. Codex and Antigravity have also run analyses successfully. Gemini CLI and Cursor have setup notes and are untested.</p>
   <h3>Benchmarks</h3>
-  <p><code>./bench-setup</code> fetches Ghera, MalEval and the vulnerable apps and checks them against recorded hashes. It asks before downloading MalEval, which is live malware. <code>./cupella gate</code> compares 94 metrics before and after a script change and fails if any gets worse.</p>
+  <p><code>./bench-setup</code> fetches Ghera, MalEval and the vulnerable apps and checks them against recorded hashes. It asks before downloading MalEval, which is live malware. <code>./cupella gate</code> compares the lead metrics before and after a script change and fails if any gets worse.</p>
 </section>
 
 <section id="limits">

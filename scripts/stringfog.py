@@ -60,8 +60,89 @@ def scheme_xor(s, k):
 SCHEMES = [("b64-xor", scheme_b64_xor), ("xor", scheme_xor)]
 
 
+# opcodes whose destination is a register pair (vA, vA+1)
+WIDE_DST = ({0x04, 0x05, 0x06, 0x0b, 0x16, 0x17, 0x18, 0x19, 0x45, 0x53, 0x61, 0x7d, 0x80, 0x81, 0x83,
+             0x86, 0x88, 0x89, 0x8b} | set(range(0x9b, 0xa6)) | set(range(0xab, 0xb0))
+            | set(range(0xbb, 0xc6)) | set(range(0xcb, 0xd0)))
+# after these the next instruction is reached only by a branch
+ENDS = {0x0e, 0x0f, 0x10, 0x11, 0x27, 0x28, 0x29, 0x2a}
+
+
+def written(op, unit, buf, at):
+  """registers an instruction writes, by its Dalvik format (check-cast keeps the value)"""
+  if op in (0x01, 0x04, 0x07, 0x12, 0x20, 0x21, 0x23) or 0x52 <= op <= 0x58 or 0x7b <= op <= 0x8f \
+      or 0xb0 <= op <= 0xd7:
+    a = (unit >> 8) & 0xF  # vA, 4 bits
+  elif op in (0x02, 0x05, 0x08, 0x22, 0xfe, 0xff) or 0x0a <= op <= 0x0d or 0x13 <= op <= 0x1c \
+      or 0x2d <= op <= 0x31 or 0x44 <= op <= 0x4a or 0x60 <= op <= 0x66 or 0x90 <= op <= 0xaf \
+      or 0xd8 <= op <= 0xe2:
+    a = unit >> 8  # vAA
+  elif op in (0x03, 0x06, 0x09):
+    a = struct.unpack_from("<H", buf, at + 2)[0]  # vAAAA
+  else:
+    return ()
+  return (a, a + 1) if op in WIDE_DST else (a,)
+
+
+def insns(buf, base, n):
+  """(pc, unit, opcode) of each instruction, skipping switch and array payloads"""
+  pc = 0
+  while pc < n:
+    unit = struct.unpack_from("<H", buf, base + 2 * pc)[0]
+    op = unit & 0xFF
+    if op == 0 and unit in (0x0100, 0x0200, 0x0300):
+      if unit == 0x0100:
+        pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 2 + 4
+      elif unit == 0x0200:
+        pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 4 + 2
+      else:
+        w, sz = struct.unpack_from("<HI", buf, base + 2 * pc + 2)
+        pc += (sz * w + 1) // 2 + 4
+      continue
+    yield pc, unit, op
+    pc += dex.WIDTH[op]
+
+
+def branch_targets(buf, base, n):
+  """pcs that goto, if-*, and switch instructions jump to"""
+  out = set()
+  try:
+    for pc, unit, op in insns(buf, base, n):
+      try:
+        out |= _targets(buf, base, pc, unit, op)
+      except struct.error:
+        pass  # a branch or payload past the end
+  except struct.error:
+    pass  # truncated code: the targets found so far
+  return out
+
+
+def _targets(buf, base, pc, unit, op):
+  at = base + 2 * pc
+  if op == 0x28:
+    return {pc + ((unit >> 8) ^ 0x80) - 0x80}
+  if op == 0x29 or 0x32 <= op <= 0x3d:
+    return {pc + struct.unpack_from("<h", buf, at + 2)[0]}
+  if op == 0x2a:
+    return {pc + struct.unpack_from("<i", buf, at + 2)[0]}
+  if op in (0x2b, 0x2c):
+    ppc = pc + struct.unpack_from("<i", buf, at + 2)[0]
+    if ppc < 0:
+      return set()
+    pp = base + 2 * ppc
+    ident, size = struct.unpack_from("<HH", buf, pp)
+    if ident == 0x0100:
+      return {pc + t for t in struct.unpack_from("<%di" % size, buf, pp + 8)}
+    if ident == 0x0200:
+      return {pc + t for t in struct.unpack_from("<%di" % size, buf, pp + 4 + 4 * size)}
+  return set()
+
+
 def calls(d, buf):
-  """{method_key: [(arg1, arg2), ...]} for static (String,String)String calls with constant args"""
+  """{method_key: [(arg1, arg2), ...]} for static (String,String)String calls with constant args.
+  A register keeps its const-string value until any instruction writes it; every value is
+  dropped at branch targets, at move-exception, and after goto/return/throw, where it may
+  come from another path."""
   out = {}
   for _cls, data, _s, _i in d.classes():
     for _idx, code in d.methods_of(data):
@@ -69,33 +150,26 @@ def calls(d, buf):
         continue
       try:
         (n,) = struct.unpack_from("<I", buf, code + 12)
-        base, pc, regs = code + 16, 0, {}
-        while pc < n:
-          unit = struct.unpack_from("<H", buf, base + 2 * pc)[0]
-          op = unit & 0xFF
-          if op == 0 and unit in (0x0100, 0x0200, 0x0300):
-            if unit == 0x0100:
-              pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 2 + 4
-            elif unit == 0x0200:
-              pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 4 + 2
-            else:
-              w, sz = struct.unpack_from("<HI", buf, base + 2 * pc + 2)
-              pc += (sz * w + 1) // 2 + 4
-            continue
-          if op == 0x1a:
-            regs[unit >> 8] = d.string(struct.unpack_from("<H", buf, base + 2 * pc + 2)[0])
-          elif op == 0x1b:
-            regs[unit >> 8] = d.string(struct.unpack_from("<I", buf, base + 2 * pc + 2)[0])
-          elif op == 0x71 and unit >> 12 == 2:  # invoke-static with two arguments
+        base, regs = code + 16, {}
+        targets = branch_targets(buf, base, n)
+        for pc, unit, op in insns(buf, base, n):
+          if pc in targets or op == 0x0d:  # join point or move-exception (handler entry)
+            regs.clear()
+          if op == 0x71 and unit >> 12 == 2:  # invoke-static with two arguments
             midx, rr = struct.unpack_from("<HH", buf, base + 2 * pc + 2)
             key = d.method(midx)[4]
             if key.endswith(SIG):
               a, b = rr & 0xF, (rr >> 4) & 0xF
               if a in regs and b in regs:
                 out.setdefault(key, []).append((regs[a], regs[b]))
-          elif op in (0x0a, 0x0b, 0x0c) and (unit >> 8) in regs:
-            regs.pop(unit >> 8, None)  # move-result overwrites the register
-          pc += dex.WIDTH[op]
+          for r in written(op, unit, buf, base + 2 * pc):
+            regs.pop(r, None)
+          if op == 0x1a:
+            regs[unit >> 8] = d.string(struct.unpack_from("<H", buf, base + 2 * pc + 2)[0])
+          elif op == 0x1b:
+            regs[unit >> 8] = d.string(struct.unpack_from("<I", buf, base + 2 * pc + 2)[0])
+          if op in ENDS:
+            regs.clear()
       except (struct.error, IndexError, ValueError):
         continue
   return out

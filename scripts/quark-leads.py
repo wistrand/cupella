@@ -42,6 +42,8 @@ def locations(crime):
 def java_location(work, cls, method, cache):
   """'Lpkg/Outer$Inner;' + method -> (rel path under jadx/sources, line) or None"""
   rel = cls[1:-1].split("$")[0] + ".java"
+  if "/" not in rel:
+    rel = "defpackage/" + rel  # jadx puts the unnamed package there
   path = os.path.join(work, "jadx", "sources", rel)
   if not os.path.exists(path):
     return None

@@ -19,16 +19,42 @@ OTHER_IDS = {0x42726577: "padding", 0x6DFF800D: "source-stamp-v2", 0x2146444E: "
              0x504B4453: "dependency-info", 0x2B09189E: "source-stamp-v1"}
 
 
-def find_block(buf):
-  eocd = buf.rfind(b"PK\x05\x06")
-  if eocd < 0:
-    return None
+def find_eocd(buf):
+  """offset of the ZIP end-of-central-directory record, or -1. As Android does: the last
+  "PK\\x05\\x06" whose comment length reaches exactly the end of the file, so the same bytes
+  inside the ZIP comment cannot pose as the record."""
+  lo = max(0, len(buf) - 22 - 0xFFFF)
+  end = len(buf) - 22 + 4  # a candidate needs its 22 bytes
+  while end - 4 >= lo:
+    p = buf.rfind(b"PK\x05\x06", lo, end)
+    if p < 0:
+      return -1
+    (clen,) = struct.unpack_from("<H", buf, p + 20)
+    if p + 22 + clen == len(buf):
+      return p
+    end = p + 3  # keep searching backwards
+  return -1
+
+
+def block_bounds(buf, eocd):
+  """(block start, central directory offset) of the APK Signing Block, or None. The
+  size in the footer must fit before the central directory and match the header copy."""
   (cd_off,) = struct.unpack_from("<I", buf, eocd + 16)
-  if cd_off < 32 or buf[cd_off - 16:cd_off] != MAGIC:
+  if cd_off < 32 or cd_off > eocd or buf[cd_off - 16:cd_off] != MAGIC:
     return None
   (size,) = struct.unpack_from("<Q", buf, cd_off - 24)
   start = cd_off - size - 8
-  return buf[start + 8:cd_off - 24]
+  if size < 24 or start < 0 or struct.unpack_from("<Q", buf, start)[0] != size:
+    return None
+  return start, cd_off
+
+
+def find_block(buf):
+  eocd = find_eocd(buf)
+  if eocd < 0:
+    return None
+  b = block_bounds(buf, eocd)
+  return None if b is None else buf[b[0] + 8:b[1] - 24]
 
 
 def lp_items(buf):

@@ -1,8 +1,7 @@
-<!-- Prompt for an adversarial verifier: tries to refute each reported item against the
-code. Works for benchmark verdicts and, with {VERDICT_DIR}/{OUT_DIR} pointed at a
-report's findings exported as JSON, for reports. Replace {APPS}, {VERDICT_DIR},
-{OUT_DIR}. Run as a fresh agent with the reader role (roles/reader.md), never a fork. For a report, use
-verify-report.md instead. -->
+<!-- Prompt for an adversarial verifier of benchmark verdicts: tries to refute each
+reported item against the code. Replace {APPS}, {VERDICT_DIR}, {OUT_DIR}. Run as a
+fresh agent with the reader role (roles/reader.md), never a fork. For a report in
+reports/, use verify-report.md. -->
 You are verifying another analyst's security findings on small Android apps, statically. Your job is to refute findings that do not hold. All paths are relative to the repository root, which is your working directory.
 
 Apps (each is a directory work/<id>/, already unpacked and scanned): {APPS}

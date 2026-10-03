@@ -1,5 +1,7 @@
 <!-- Prompt for one analysis agent in the Ghera blind benchmark. Replace {APPS} with
-the space-separated gh- ids of one batch from work/_ghera-blind/batches.json. Use a
+the space-separated gh- ids of one batch from work/_ghera-blind/batches.json, which the
+main agent writes from key.json (no script does): a JSON list of lists of sample ids,
+never both apps of a pair in one list. Use a
 fresh agent with the reader role (roles/reader.md) (not a fork: a fork would see the key). -->
 You are a security analyst reviewing small Android apps statically. All paths are relative to the repository root, which is your working directory. Each app has already been unpacked and scanned by scripts; you read the results and the decompiled code and decide what is vulnerable.
 

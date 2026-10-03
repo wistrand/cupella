@@ -12,10 +12,13 @@ Two checks, each run when it applies:
                   consistency with the sources, not a reproducible build.
 
 NETWORK: this script downloads from a fixed list of public registries and nowhere
-else: storage.googleapis.com/download.flutter.io and pub.dev/api/archives. It sends
-only public identifiers taken from the binary (an engine commit hash, a package name
-and version). It never contacts hosts named inside the APK. Downloads are cached in
-work/_reference/.
+else: storage.googleapis.com/download.flutter.io and pub.dev/api/archives. Every
+redirect is checked against the same list before it is followed, and so is the final
+URL; a redirect anywhere else is refused and reported.
+It sends only public identifiers taken from the binary (an engine commit hash, a
+package name and version). It never contacts hosts named inside the APK. At most
+MAX_LOOKUPS (50) downloads per run; a failed lookup is reported and the run goes on.
+Downloads are cached in work/_reference/.
 
 Usage: scripts/reference-check.py <name> [flutter-engine|pub-sources]
        (output is meant to be saved as work/<name>/reference-check.txt)
@@ -40,31 +43,55 @@ ALLOWED = ("https://storage.googleapis.com/download.flutter.io/", "https://pub.d
 ENGINE_ABI = {"arm64-v8a": "arm64_v8a", "armeabi-v7a": "armeabi_v7a", "x86_64": "x86_64", "x86": "x86"}
 SRC_EXT = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".inc", ".m", ".mm", ".S", ".s",
            ".rs", ".go", ".dart", ".cmake", ".txt", ".def")
+REDIRECT_ALLOWED = ALLOWED  # a redirect elsewhere is refused and reported
 MAX_DOWNLOAD = 400 * 1024 * 1024
+MAX_LOOKUPS = 50
+lookups = 0
 PUB_PATH = re.compile(rb"\.pub-cache/hosted/pub\.dev/([A-Za-z0-9_]+)-(\d+\.\d+\.\d+[\w.+-]*)/")
 SKIP_SYM = re.compile(r"^(std::|__|operator|typeinfo |vtable |VTT |guard variable|non-virtual thunk|"
                       r"virtual thunk|construction vtable|_Unwind|__cxa|__gnu|__aeabi|__emutls|"
                       r"_fini|_init|__bss|_edata|_end)")
 
 
+class AllowListRedirect(urllib.request.HTTPRedirectHandler):
+  def redirect_request(self, req, fp, code, msg, headers, newurl):
+    if not newurl.startswith(REDIRECT_ALLOWED):
+      raise ValueError("refusing redirect outside the allow-list: " + newurl)
+    return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+OPENER = urllib.request.build_opener(AllowListRedirect)
+
+
 def fetch(url, dest):
+  """200 when dest holds the download, else a short reason (HTTP status, error, cap)."""
+  global lookups
   if not url.startswith(ALLOWED):
     raise ValueError("refusing to fetch outside the allow-list: " + url)
   if os.path.exists(dest):
     return 200
+  if lookups >= MAX_LOOKUPS:
+    return "skipped: cap of %d lookups per run reached" % MAX_LOOKUPS
+  lookups += 1
   os.makedirs(os.path.dirname(dest), exist_ok=True)
   req = urllib.request.Request(url, headers={"User-Agent": "cupella-reference-check"})
   try:
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with OPENER.open(req, timeout=120) as r:
+      if not r.geturl().startswith(REDIRECT_ALLOWED):
+        raise ValueError("final URL outside the allow-list: " + r.geturl())
       data = r.read(MAX_DOWNLOAD + 1)
       if len(data) > MAX_DOWNLOAD:
         raise ValueError("download larger than the cap")
       with open(dest + ".part", "wb") as f:
         f.write(data)
       os.replace(dest + ".part", dest)
-      return r.status
+      return r.status if r.status == 200 else "HTTP %s" % r.status
   except urllib.error.HTTPError as e:
-    return e.code
+    return "HTTP %s" % e.code
+  except urllib.error.URLError as e:
+    return "error: %s" % e.reason
+  except (OSError, ValueError) as e:  # timeouts, resets, over-cap, refused redirect
+    return "error: %s" % e
 
 
 def sha256(path):
@@ -101,7 +128,7 @@ def check_flutter_engine(name):
       dest = os.path.join(CACHE, "flutter-engine", "%s-%s.jar" % (art, h))
       status = fetch(url, dest)
       if status != 200:
-        print("  %s: no official release artifact (HTTP %s)" % (h, status))
+        print("  %s: no official release artifact (%s)" % (h, status))
         continue
       try:
         with zipfile.ZipFile(dest) as z:
@@ -219,7 +246,7 @@ def check_pub_sources(name):
     dest = os.path.join(CACHE, "pub", "%s-%s.tar.gz" % (pkg, ver))
     status = fetch(url, dest)
     if status != 200:
-      print("- package archive not available (HTTP %s): %s" % (status, url))
+      print("- package archive not available (%s): %s" % (status, url))
       continue
     src = os.path.join(CACHE, "pub", "%s-%s" % (pkg, ver))
     if not os.path.isdir(src):
@@ -300,6 +327,7 @@ def main():
     print()
   if which in ("all", "pub-sources"):
     check_pub_sources(name)
+  print("\n%d network lookups (cap %d per run; cached downloads not counted)" % (lookups, MAX_LOOKUPS))
 
 
 if __name__ == "__main__":

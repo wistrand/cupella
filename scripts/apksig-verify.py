@@ -52,16 +52,42 @@ def lp_items(buf):
   return out
 
 
-def layout(buf):
-  eocd = buf.rfind(b"PK\x05\x06")
-  if eocd < 0:
-    raise ValueError("no ZIP end-of-central-directory record")
+def find_eocd(buf):
+  """offset of the ZIP end-of-central-directory record, or -1. As Android does: the last
+  "PK\\x05\\x06" whose comment length reaches exactly the end of the file, so the same bytes
+  inside the ZIP comment cannot pose as the record."""
+  lo = max(0, len(buf) - 22 - 0xFFFF)
+  end = len(buf) - 22 + 4  # a candidate needs its 22 bytes
+  while end - 4 >= lo:
+    p = buf.rfind(b"PK\x05\x06", lo, end)
+    if p < 0:
+      return -1
+    (clen,) = struct.unpack_from("<H", buf, p + 20)
+    if p + 22 + clen == len(buf):
+      return p
+    end = p + 3  # keep searching backwards
+  return -1
+
+
+def block_bounds(buf, eocd):
+  """(block start, central directory offset) of the APK Signing Block, or None. The
+  size in the footer must fit before the central directory and match the header copy."""
   (cd_off,) = struct.unpack_from("<I", buf, eocd + 16)
-  if cd_off < 32 or buf[cd_off - 16:cd_off] != MAGIC:
+  if cd_off < 32 or cd_off > eocd or buf[cd_off - 16:cd_off] != MAGIC:
     return None
   (size,) = struct.unpack_from("<Q", buf, cd_off - 24)
-  block_start = cd_off - size - 8
-  return block_start, cd_off, eocd
+  start = cd_off - size - 8
+  if size < 24 or start < 0 or struct.unpack_from("<Q", buf, start)[0] != size:
+    return None
+  return start, cd_off
+
+
+def layout(buf):
+  eocd = find_eocd(buf)
+  if eocd < 0:
+    raise ValueError("no ZIP end-of-central-directory record")
+  b = block_bounds(buf, eocd)
+  return None if b is None else (b[0], b[1], eocd)
 
 
 def content_digest(buf, block_start, cd_off, eocd, alg):
@@ -176,7 +202,11 @@ def main():
   with open(apk, "rb") as f:
     buf = f.read()
   all_ok, any_sig = True, False
-  lay = layout(buf)
+  try:
+    lay = layout(buf)
+  except ValueError as ex:
+    print("APK Signing Block: cannot locate (%s)" % ex)
+    lay, all_ok = None, False
   with tempfile.TemporaryDirectory() as tmp:
     if lay is None:
       print("APK Signing Block: none")

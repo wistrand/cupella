@@ -8,6 +8,8 @@ file when an item is done or new evidence moves it.
 
 - Coverage gaps (largest effect)
 - Detection gaps
+- Agent stages
+- Anti-analysis
 - Measurement
 - Tooling and operations
 - Out of scope by design
@@ -22,8 +24,8 @@ file when an item is done or new evidence moves it.
    and turning the recurring schemes (DES-ECB with a constant key between zlib layers,
    RC4 with a constant key, ZKM-style XOR string tables, AES-CBC with key and IV at the
    call site) into a script that recognizes and decrypts them without an agent. Done
-   for constant-argument string decoders (`stringfog.py`: Base64+XOR and XOR, 5,032 of
-   the agent's 5,030 strings on the BTMOB sample); the payload schemes remain.
+   for constant-argument string decoders (`stringfog.py`: Base64+XOR and XOR, 5,032
+   strings on the BTMOB sample, where the agent's decryptor found 5,030); the payload schemes remain.
 2. **Flows through R8-renamed libraries.** `flows.py` finds sources and sinks by API
    name, so when Room, DataStore, or OkHttp are renamed the path ends at an unnamed
    call (launcher A's screen-text-to-database finding is invisible to it). Next step:
@@ -60,11 +62,11 @@ From the agent benchmarks; each is small and testable on the same samples.
 
 ## Agent stages
 
-- Report verification has a prompt (`prompts/verify-report.md`) used twice: the Octo
-  report (3 wrong, 4 overstated of 25 claims) and the BTMOB report (1 wrong, 10
+- Report verification has a prompt (`prompts/verify-report.md`) used three times: the
+  Octo report (3 wrong, 4 overstated of 25 claims), the BTMOB report (1 wrong, 10
   overstated of 56; most were features whose permission the manifest lacks, a check
   the analysis should make before writing: code that tests for a permission the app
-  never requests does not run). Both times the Write tool refused the verifier's output
+  never requests does not run), and the BTMOB rerun (below). The first two times the Write tool refused the verifier's output
   file: Claude Code blocks subagent writes to files named like reports (see
   [gotchas.md](gotchas.md)); the output file is now `verification.md`. Run it on the other reports and on a
   benchmark slice to see whether it removes errors without removing true findings.
@@ -112,9 +114,10 @@ From the agent benchmarks; each is small and testable on the same samples.
 - The `decryptor` role's shell is limited by its instructions, not technically, in every
   harness so far. A per-agent command allow-list (from the role header) would make it
   technical where the harness supports one.
-- Other harnesses (Codex CLI, Gemini CLI, Cursor) have setup notes in
-  [harnesses.md](harnesses.md) but have not run an analysis. Run one sample and one
-  benchmark slice through each before claiming support.
+- Codex and Antigravity have run analyses successfully, but no benchmark and, for
+  Codex, no subagent stages. Gemini CLI and Cursor have setup notes in
+  [harnesses.md](harnesses.md) and have not run an analysis. Run one sample and one
+  benchmark slice through each before claiming benchmark parity.
 
 ## Anti-analysis
 
@@ -184,8 +187,7 @@ From the agent benchmarks; each is small and testable on the same samples.
 - React Native: `hermes-decompile.sh` has run only on a synthetic bundle; validate on
   a real Hermes app.
 - iOS is not supported.
-- The repository is not under version control yet. `.gitignore` covers `data/` (live
-  malware), `work/`, `cache/`, and `bench/`.
+- `.gitignore` covers `data/` (live malware), `work/`, `cache/`, and `bench/`.
 - `scripts/` is flat: pipeline scripts, library modules (`units.py`, `dex.py`,
   `elf.py`, `llav_client.py`), and benchmark scripts side by side. Splitting it needs
   `./cupella`, the `PYTHONPATH` of the container, and the mount cases in `cupella` changed
@@ -193,8 +195,9 @@ From the agent benchmarks; each is small and testable on the same samples.
 - Project permission rules (`.claude/settings.json`): `./cupella` is allowed;
   `adb` and host parsing tools (`readelf`, `objdump`, `strings`, `cstool`, `unzip`,
   `file`, `jadx`, `apktool`) are denied for every session in the project, the user's
-  own commands through Claude Code included. `apk-decryptor`'s shell is still limited
-  by its instructions beyond that.
+  own commands through Claude Code included. The rules are prefix matches: a full path
+  or `bash -c` gets around them. `apk-decryptor`'s shell is still limited by its
+  instructions beyond that.
 - Distribution: clone the repository, `./cupella setup`; workspaces keep cases out of the
   checkout. Not done: a prebuilt image in a registry (would remove the long first build;
   publishing is the maintainer's call), a thin Claude Code plugin as a launcher.

@@ -31,26 +31,48 @@ def parse_string_pool(buf, off):
   _, hsize, _, count, _, flags, strings_start, _ = struct.unpack_from("<HHIIIIII", buf, off)
   utf8 = bool(flags & UTF8_FLAG)
   out = []
+  count = min(count, max(0, (len(buf) - off - hsize) // 4))  # the offsets must be in the file
   for i in range(count):
-    (rel,) = struct.unpack_from("<I", buf, off + hsize + 4 * i)
-    p = off + strings_start + rel
-    if utf8:
-      for _ in range(2):  # char length, then byte length; each 1 or 2 bytes
-        n = buf[p]
-        p += 1
-        if n & 0x80:
-          n = ((n & 0x7F) << 8) | buf[p]
-          p += 1
-      out.append(buf[p:p + n].decode("utf-8", "replace"))
-    else:
-      (n,) = struct.unpack_from("<H", buf, p)
-      p += 2
-      if n & 0x8000:
-        (lo,) = struct.unpack_from("<H", buf, p)
-        n = ((n & 0x7FFF) << 16) | lo
-        p += 2
-      out.append(buf[p:p + 2 * n].decode("utf-16-le", "replace"))
+    try:
+      out.append(read_string(buf, off + strings_start + struct.unpack_from("<I", buf, off + hsize + 4 * i)[0], utf8))
+    except (struct.error, IndexError):
+      out.append("")  # offset past the end: an empty string, keeping later indices right
   return out
+
+
+def read_string(buf, p, utf8):
+  if p >= len(buf):
+    raise IndexError("string offset past the end")
+  if utf8:
+    for _ in range(2):  # char length, then byte length; each 1 or 2 bytes
+      n = buf[p]
+      p += 1
+      if n & 0x80:
+        n = ((n & 0x7F) << 8) | buf[p]
+        p += 1
+    return buf[p:p + n].decode("utf-8", "replace")
+  (n,) = struct.unpack_from("<H", buf, p)
+  p += 2
+  if n & 0x8000:
+    (lo,) = struct.unpack_from("<H", buf, p)
+    n = ((n & 0x7FFF) << 16) | lo
+    p += 2
+  return buf[p:p + 2 * n].decode("utf-16-le", "replace")
+
+
+def xml_name(s):
+  """s as a valid XML name: a pool string such as 'x android:exported="false" y' used as
+  an element or attribute name would otherwise forge attributes in the text output"""
+  out = "".join(c if (c.isascii() and (c.isalnum() or c in "._-")) or (not c.isascii() and c.isalpha())
+                else "_" for c in s)
+  if not out or not (out[0].isalpha() or out[0] == "_"):
+    out = "_" + out
+  return out
+
+
+def attr_value(v):
+  # newlines and tabs as references, so every element stays on one line for grep
+  return quoteattr(v, {"\n": "&#10;", "\r": "&#13;", "\t": "&#9;"})
 
 
 class Pool(list):
@@ -84,54 +106,72 @@ def fmt_value(strings, raw, dtype, data):
 
 
 def decode(buf):
-  strings, resmap, ns_prefix, pending_ns = Pool(), [], {}, []
+  state = {"strings": Pool(), "resmap": [], "ns_prefix": {}, "pending_ns": []}
   lines, depth = ['<?xml version="1.0" encoding="utf-8"?>'], 0
   off = 8
   while off < len(buf):
-    ctype, hsize, size = struct.unpack_from("<HHI", buf, off)
+    try:
+      ctype, hsize, size = struct.unpack_from("<HHI", buf, off)
+    except struct.error:
+      lines.append("<!-- axml2xml: truncated chunk header at 0x%x; parsing stopped -->" % off)
+      break
     if size == 0:
       break
-    if ctype == RES_STRING_POOL:
-      strings = Pool(parse_string_pool(buf, off))
-    elif ctype == RES_XML_RESOURCE_MAP:
-      resmap = struct.unpack_from("<%dI" % ((size - hsize) // 4), buf, off + hsize)
-    elif ctype == RES_XML_START_NS:
-      prefix, uri = struct.unpack_from("<II", buf, off + hsize)
-      ns_prefix[strings[uri]] = strings[prefix]
-      pending_ns.append((strings[prefix], strings[uri]))
-    elif ctype == RES_XML_START_ELEM:
-      # attributeStart and attributeSize come from the header: tampered manifests use
-      # nonstandard values that Android honors and fixed-layout parsers misread
-      _, name, a_start, a_size, attr_count = struct.unpack_from("<IIHHH", buf, off + hsize)
-      a_size = a_size if a_size >= 20 else 20
-      attrs = ['xmlns:%s=%s' % (p, quoteattr(u)) for p, u in pending_ns]
-      pending_ns = []
-      p = off + hsize + a_start
-      for _ in range(attr_count):
-        if p + 20 > len(buf):
-          break
-        a_ns, a_name, a_raw, _, _, a_type, a_data = struct.unpack_from("<IIIHBBI", buf, p)
-        p += a_size
-        n = strings[a_name]
-        if a_name < len(resmap) and resmap[a_name] in ATTR_NAMES:
-          n = ATTR_NAMES[resmap[a_name]]  # the resource id decides, as on the device
-        elif not n and a_name < len(resmap):
-          n = "attr_0x%08x" % resmap[a_name]
-        if a_ns != NO_ENTRY:
-          n = "%s:%s" % (ns_prefix.get(strings[a_ns], strings[a_ns]), n)
-        attrs.append("%s=%s" % (n, quoteattr(fmt_value(strings, a_raw, a_type, a_data))))
-      lines.append("%s<%s%s>" % ("  " * depth, strings[name], "".join(" " + a for a in attrs)))
-      depth += 1
-    elif ctype == RES_XML_CDATA:
-      (text,) = struct.unpack_from("<I", buf, off + hsize)
-      if strings[text].strip():
-        lines.append("%s%s" % ("  " * depth, escape(strings[text].strip())))
-    elif ctype == RES_XML_END_ELEM:
-      _, name = struct.unpack_from("<II", buf, off + hsize)
-      depth -= 1
-      lines.append("%s</%s>" % ("  " * depth, strings[name]))
+    if hsize < 8 or size < hsize:
+      lines.append("<!-- axml2xml: bad chunk sizes at 0x%x (header %d, size %d); parsing stopped -->" % (off, hsize, size))
+      break
+    try:
+      depth = chunk(buf, off, ctype, hsize, size, lines, depth, state)
+    except (struct.error, IndexError):
+      lines.append("<!-- axml2xml: chunk 0x%04x at 0x%x runs past the data; parsing stopped -->" % (ctype, off))
+      break
     off += size
   return "\n".join(lines) + "\n"
+
+
+def chunk(buf, off, ctype, hsize, size, lines, depth, st):
+  """one chunk: appends output lines, updates st, returns the new depth"""
+  strings, resmap, ns_prefix = st["strings"], st["resmap"], st["ns_prefix"]
+  if ctype == RES_STRING_POOL:
+    st["strings"] = Pool(parse_string_pool(buf, off))
+  elif ctype == RES_XML_RESOURCE_MAP:
+    st["resmap"] = struct.unpack_from("<%dI" % ((size - hsize) // 4), buf, off + hsize)
+  elif ctype == RES_XML_START_NS:
+    prefix, uri = struct.unpack_from("<II", buf, off + hsize)
+    ns_prefix[strings[uri]] = strings[prefix]
+    st["pending_ns"].append((strings[prefix], strings[uri]))
+  elif ctype == RES_XML_START_ELEM:
+    # attributeStart and attributeSize come from the header: tampered manifests use
+    # nonstandard values that Android honors and fixed-layout parsers misread
+    _, name, a_start, a_size, attr_count = struct.unpack_from("<IIHHH", buf, off + hsize)
+    a_size = a_size if a_size >= 20 else 20
+    attrs = ['xmlns:%s=%s' % (xml_name(p), attr_value(u)) for p, u in st["pending_ns"]]
+    st["pending_ns"] = []
+    p = off + hsize + a_start
+    for _ in range(attr_count):
+      if p + 20 > len(buf):
+        break
+      a_ns, a_name, a_raw, _, _, a_type, a_data = struct.unpack_from("<IIIHBBI", buf, p)
+      p += a_size
+      n = xml_name(strings[a_name])
+      if a_name < len(resmap) and resmap[a_name] in ATTR_NAMES:
+        n = ATTR_NAMES[resmap[a_name]]  # the resource id decides, as on the device
+      elif not strings[a_name] and a_name < len(resmap):
+        n = "attr_0x%08x" % resmap[a_name]
+      if a_ns != NO_ENTRY:
+        n = "%s:%s" % (xml_name(ns_prefix.get(strings[a_ns], strings[a_ns])), n)
+      attrs.append("%s=%s" % (n, attr_value(fmt_value(strings, a_raw, a_type, a_data))))
+    lines.append("%s<%s%s>" % ("  " * depth, xml_name(strings[name]), "".join(" " + a for a in attrs)))
+    depth += 1
+  elif ctype == RES_XML_CDATA:
+    (text,) = struct.unpack_from("<I", buf, off + hsize)
+    if strings[text].strip():
+      lines.append("%s%s" % ("  " * depth, escape(strings[text].strip())))
+  elif ctype == RES_XML_END_ELEM:
+    _, name = struct.unpack_from("<II", buf, off + hsize)
+    depth -= 1
+    lines.append("%s</%s>" % ("  " * max(depth, 0), xml_name(strings[name])))
+  return depth
 
 
 if __name__ == "__main__":

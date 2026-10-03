@@ -2,7 +2,7 @@
 """Callers and callees of a function, from the same call graph as structure-leads.
 
 Java calls come from the dex bytecode (exact, lambdas folded into their creator),
-native calls from Ghera output (direct calls and address-taken functions), Dart
+native calls from Ghidra output (direct calls and address-taken functions), Dart
 calls from blutter's annotations. See units.py.
 
 Usage: ./cupella xref.py <name> <query> [--depth N] [--scope path ...]

@@ -6,8 +6,8 @@ formats and tools, not yet reproduced here. Confirm an unverified entry the firs
 time it matters, then mark it or fix it.
 
 Sample names are anonymized: launcher A and launcher B are two third-party launcher
-apps, the Flutter app is a third-party chat app, and malware is named by its public
-family (BTMOB, Octo).
+apps, the Flutter app is a third-party chat app, the video app is a third-party video
+app, and malware is named by its public family (BTMOB, Octo).
 
 ## Contents
 - Formats
@@ -105,8 +105,9 @@ family (BTMOB, Octo).
   prints "Unrecognized option" followed by the usage text. The flags used by
   `unpack.sh` (`d -f -o`) are valid in 3.0.3.
 - **Resource decode failures are common** on apps built with newer aapt2 features or
-  with resource obfuscation. Rerun with `-r` for smali only and read the manifest from
-  jadx output or the fallback decode.
+  with resource obfuscation. Read the manifest from the fallback decode or jadx output.
+  No script reruns apktool with `-r` (smali only); if the smali is needed, ask the user
+  to run it in `./cupella shell`. Never run apktool on the host.
 
 ## jadx
 
@@ -134,8 +135,9 @@ family (BTMOB, Octo).
   can be wrong, most often in exactly the obfuscated code that matters. For a finding
   that depends on precise logic, cross-check the smali.
 - **Large APKs exhaust the default heap.** Symptoms: very slow, then
-  `OutOfMemoryError`. Set `JAVA_OPTS="-Xmx4g"` (jadx's launcher reads it) or lower
-  threads with `-j 2`.
+  `OutOfMemoryError`. No script sets the heap or thread count; ask the user to rerun
+  jadx in `./cupella shell` with `JAVA_OPTS="-Xmx4g"` (jadx's launcher reads it) or
+  `-j 2`. Never run jadx on the host.
 - **Kotlin code decompiles with noise (verified)**: `Intrinsics.checkNotNull` calls,
   `@Metadata` annotations with long escaped strings (they match almost any grep, cut
   line length), `$default` bridge methods, coroutine state machines as `switch` blocks.
@@ -162,7 +164,7 @@ family (BTMOB, Octo).
 ## Native code
 
 - **Capabilities of a static binary are invisible to the import table (verified).**
-  The DDoS bot in the malware sample has no imports at all; its sockets, process
+  The DDoS-bot sample's bot has no imports at all; its sockets, process
   killing, and TLS are all inside. "No sensitive imports" means nothing for a
   statically linked or packed binary. Check the "statically linked" line in the
   summary.
@@ -181,7 +183,7 @@ family (BTMOB, Octo).
 - **Substring patterns bite in string classification (verified).** "frida" matched
   "Friday" in llama.cpp's date strings. Patterns in `native-summary.py` need word
   boundaries; when a category has one odd hit, read the hit.
-- **Build paths are the cheapest provenance (verified).** the Flutter app's inference libraries
+- **Build paths are the cheapest provenance (verified).** The Flutter app's inference libraries
   contain `/home/runner/.pub-cache/hosted/pub.dev/lcpp-0.2.5/...`: built on GitHub
   Actions from that pub.dev package version. Nothing else in the binaries carries a
   version. Read the "build paths" lines in `native-summary.txt` before trying to
@@ -331,8 +333,8 @@ family (BTMOB, Octo).
   fell back to the whole tree, there were no entry points, and calls across dex files
   were lost. Have the decryptor reassemble the app as one APK (see
   `prompts/decrypt.md`, `out/parts/`).
-- **An undecodable "string decoder" can be an R8-outlined concat (verified).** In launcher B
-  Launcher, `scan.txt` listed `Lb/c0;->j(String,String)` (27 calls, "no scheme gives
+- **An undecodable "string decoder" can be an R8-outlined concat (verified).** In launcher B,
+  `scan.txt` listed `Lb/c0;->j(String,String)` (27 calls, "no scheme gives
   readable text") as a lead for the decryption stage. Its body is `return str + str2;`
   and its callers pass plain text. Open the decoder's body before starting a decryptor;
   a two-string static method with constant arguments is not enough.
@@ -371,20 +373,20 @@ family (BTMOB, Octo).
   package over. Take the scope from the triage package table.
 - **APKiD's anti-analysis hits are mostly library code (verified).** Every sample,
   including an app store client and a plain video player, shows `anti_vm : Build.FINGERPRINT
-  check`. the Flutter app's long list of `Build.*` checks is the `device_info_plus` plugin. A hit
+  check`. The Flutter app's long list of `Build.*` checks is the `device_info_plus` plugin. A hit
   says the check exists in the dex, not that the app evades analysis.
 - **Tracker signatures match names, not behavior (verified).** An app store client matches ACRA,
   which it uses to offer emailing a crash report. Launcher A matches seven Facebook
   signatures through one string, `www.facebook.com`, an entry in its own list of
   sites to gate. And "Google Ads" in the Exodus list is any `*.google.com` host.
   Report what the code does with the SDK or host.
-- **No tracker match under R8 renaming means little (verified).** NekoVideo has 91%
+- **No tracker match under R8 renaming means little (verified).** The video app has 91%
   of its classes in one- or two-letter packages; an SDK's classes would not carry its
   package name there. `trackers.txt` prints a NOTE when that applies.
 - **jadx's simple mode recovers most failed methods (verified).** Of 22 failed
   methods in the scanned scopes of the four samples, 21 were readable in simple mode, among them
   the two that the first reports had to leave unread (launcher A's polling loop,
-  NekoVideo's discovery routine). Read `jadx-retry/INDEX.txt` before falling back to
+  the video app's discovery routine). Read `jadx-retry/INDEX.txt` before falling back to
   smali.
 - **Declared permissions can be noise in malware too (verified).** The bot loader
   declares location, phone state, and overlay permissions and uses none; one entry is
@@ -425,13 +427,13 @@ family (BTMOB, Octo).
 - **"No network code" must be checked over all sources, not the app scope
   (verified).** A library could carry it. `scan.sh` prints a file list for the whole
   tree; an `INTERNET`-less manifest plus an empty list is the strong form of the claim.
-- **R8 can move app code out of the app's package (verified).** NekoVideo keeps 138
-  classes under `com.nkls.nekovideo`, while biometric and UI code referencing them
+- **R8 can move app code out of the app's package (verified).** The video app keeps 138
+  classes under its manifest package, while biometric and UI code referencing them
   sits in `a/`, `da/`, and others. `scan.sh` lists packages that reference the
   manifest package; follow a feature by its distinctive strings (preference names, log
   tags, file names) across the whole tree, not by package.
 - **A "lock", "vault", or "secure folder" feature needs its crypto read (verified).**
-  The names say nothing about strength. NekoVideo derives keys with PBKDF2 and then
+  The names say nothing about strength. The video app derives keys with PBKDF2 and then
   XORs only the first 8 KB of each file. Find the write path (what bytes change on
   disk) and the read path, and report what an attacker with file access gets. The
   "Custom masking, weak crypto" scan section looks for XOR-with-modulo loops and
@@ -441,7 +443,7 @@ family (BTMOB, Octo).
   authentication, what is served, and when it stops. The "Local servers, LAN" scan
   section finds them.
 - **For a Flutter app the Java scan is nearly empty and that means nothing
-  (verified).** the Flutter app's dex has the embedding and ten plugins; all endpoints, keys
+  (verified).** The Flutter app's dex has the embedding and ten plugins; all endpoints, keys
   handling, and features are in `libapp.so`. Read `flutter-summary.txt` first.
 - **A Dart package list is strong evidence in both directions (verified).**
   Non-obfuscated snapshots keep `package:` URIs for everything linked. No telemetry
@@ -456,7 +458,7 @@ family (BTMOB, Octo).
   export. Run `flutter-decompile.sh` before settling Dart findings.
 - **Deduplicated Dart code carries the wrong name (verified).** Release snapshots
   are built with `dedup_instructions`: functions with identical machine code are
-  merged, and a call shows the name of whichever copy survived. the Flutter app's
+  merged, and a call shows the name of whichever copy survived. The Flutter app's
   `MistralController::stop` appears to call `AnthropicClient::endSession`. Trust such
   a name for what the code does, not for which class it belongs to.
 - **One Dart library file can hold the whole app (verified).** With `part` files

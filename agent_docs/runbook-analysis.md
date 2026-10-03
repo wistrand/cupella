@@ -2,16 +2,16 @@
 
 ## Contents
 - Overview
-- Stage 1-3: unpack (scripted)
+- Stage 1: unpack (scripted)
 - Reading the triage
 - Reading the manifest
 - Orienting in the code
-- Stage 4: scan (scripted), then read
+- Stages 2 and 3: scan (scripted), then read the leads
 - Vulnerability checklist
 - Structure leads
 - Data flows
 - Malware samples
-- Stage 5: native libraries
+- Stage 4: native libraries
 - React Native apps
 - Writing the report
 - Feeding the scripts
@@ -29,7 +29,7 @@ are in the `Invariants` section of `AGENTS.md`.
 `reports/`, which is local to the workspace and never committed; never read an earlier
 report during an analysis (`AGENTS.md` Invariants).
 
-## Stage 1-3: unpack (scripted)
+## Stage 1: unpack (scripted)
 
 ```bash
 ./cupella unpack.sh data/<name>.apk
@@ -82,7 +82,7 @@ From `triage.txt`, settle these before anything else:
 
 - **What kind of app.** A framework marker (Flutter, React Native, Unity, Xamarin,
   Cordova) means the app logic is not in the dex and jadx output is host glue. State
-  this early in the report; stage 4 then covers only the shell. For Flutter, switch
+  this early in the report; stages 2 and 3 then cover only the shell. For Flutter, switch
   to [runbook-flutter.md](runbook-flutter.md).
 - **Which packages are the app's own.** The package table shows class counts. The
   app's code is usually under the manifest package, but often also in sibling
@@ -129,8 +129,9 @@ network security config (cleartext domains, trust anchors, pins), backup rules, 
 provider paths. Check `apktool/res/values/strings.xml` and `arrays.xml` for URLs,
 keys, and SDK configuration.
 
-If apktool failed, rerun it by hand with `-r` for smali only, and use `manifest.xml`
-plus `jadx/resources/AndroidManifest.xml`.
+If apktool failed, use `manifest.xml` plus `jadx/resources/AndroidManifest.xml`. No
+script reruns apktool with `-r` (smali only); if the smali is needed, ask the user to
+run it in `./cupella shell`. Never run apktool on the host.
 
 ## Orienting in the code
 
@@ -142,10 +143,11 @@ plus `jadx/resources/AndroidManifest.xml`.
 3. Identify third-party libraries from the package table for the report. Do not read
    their code unless a finding leads there.
 
-With R8 renaming, add `--deobf` on a jadx rerun into a separate directory only if the
-generated names help; they are jadx's invention and must not be reported as real.
+With R8 renaming, a jadx rerun with `--deobf` into a separate directory sometimes
+helps; no script does it, so ask the user to run it in `./cupella shell`. Its names are
+jadx's invention; never report them as real.
 
-## Stage 4: scan (scripted), then read
+## Stages 2 and 3: scan (scripted), then read the leads
 
 ```bash
 ./cupella scan.sh <name>                   # default scope from scope.py
@@ -359,7 +361,7 @@ What the MalEval runs (20 families, see [benchmarks.md](benchmarks.md)) showed:
 - Labels from vendor reports describe a family; a sample may lack some behaviors. Say
   what this sample's code shows.
 
-## Stage 5: native libraries
+## Stage 4: native libraries
 
 Read `native-summary.txt`. If every library is a known runtime whose exports and
 imports fit its name, record them in the report and move on. Otherwise follow
@@ -397,8 +399,8 @@ Follow [design-report.md](design-report.md). Before finishing:
   that a quote occurs on its cited lines, and that cited native and Dart functions
   exist. It cannot check that the code says what the report claims.
 - Check each number in the report against `triage.txt`, `manifest-summary.txt`, and
-  the source files. In the first full run this pass caught a wrong provider count and a
-  wrong mirror count that came from the agent's reading, not from a script.
+  the source files. In the first full run this pass caught two wrong counts that came from the
+  agent's reading, not from a script.
 
 ## Feeding the scripts
 

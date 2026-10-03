@@ -49,7 +49,11 @@ ghera() {
 
 maleval() {
   if [ "$yes" != 1 ]; then
-    read -r -p "MalEval contains 230 live malware APKs (stored, never run). Download about 2 GB? [y/N] " ok
+    local ok=""
+    if ! read -r -p "MalEval contains 230 live malware APKs (stored, never run). Download about 2 GB? [y/N] " ok; then
+      echo; echo "MalEval skipped: no answer (input closed); pass --yes to fetch it non-interactively"
+      return
+    fi
     [ "$ok" = y ] || { echo "MalEval skipped"; return; }
   fi
   echo "== MalEval"
@@ -67,8 +71,8 @@ maleval() {
     grep -E ' (reports|meta_info|entrypoints|apk)\.zip$' SHA256SUMS | sha256sum -c )
   # archives to their places; entries are checked to stay inside the target, and each APK
   # must be named after its own sha256
-  python3 - <<'PY'
-import hashlib, os, zipfile
+  python3 - <<'PY' || { echo "MalEval: FAILED (see the messages above)"; failed=1; }
+import hashlib, os, sys, zipfile
 def extract(zpath, dest, prefix=""):
   with zipfile.ZipFile(zpath) as z:
     for i in z.infolist():
@@ -88,8 +92,11 @@ for sp in ("benign", "malradar", "new"):
   d = os.path.join("data/maleval", sp)
   for f in os.listdir(d) if os.path.isdir(d) else []:
     if hashlib.sha256(open(os.path.join(d, f), "rb").read()).hexdigest() != f[:-4]:
+      print("hash mismatch: data/maleval/%s/%s is not named after its sha256" % (sp, f))
       bad += 1
 print("MalEval: %d APKs, %d hash mismatches" % (sum(len(os.listdir(os.path.join("data/maleval", s))) for s in ("benign", "malradar", "new") if os.path.isdir(os.path.join("data/maleval", s))), bad))
+if bad:
+  sys.exit("MalEval: %d APKs do not match their names (listed above); left in place; check them against bench/maleval/SHA256SUMS and apk.zip" % bad)
 PY
 }
 
@@ -110,5 +117,7 @@ vulnapps() {
   echo "vulnerable apps: $(ls data/vulnapps/*.apk | wc -l) APKs, READMEs in bench/vulnapps/, $bad failures"
 }
 
+failed=0
 for s in "${sets[@]}"; do "$s"; done
+[ "$failed" = 0 ] || { echo "bench-setup: some steps failed (see above)" >&2; exit 1; }
 echo "next: unpack and scan them (agent_docs/benchmarks.md, Rerunning), then ./cupella gate baseline"

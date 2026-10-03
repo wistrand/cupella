@@ -372,10 +372,13 @@ def native_units(work):
       for i in range(1, len(parts), 3):
         name, addr, body = parts[i], parts[i + 1], parts[i + 2]
         lines = [x[:180] for x in body.split("\n") if x.strip() and not C_DECL.match(x)]
-        u = Unit("native", "native:%s:%s" % (f, name), "%s (%s @ %s)" % (rel, name, addr), rel,
-                 line, line + body.count("\n"), name, f, lines)
+        # the body starts with the header's newline and runs to the next header; the id
+        # keeps the ABI directory so one library built for several ABIs does not collide
+        u = Unit("native", "native:%s:%s" % (os.path.relpath(os.path.join(dp, f), nat), name),
+                 "%s (%s @ %s)" % (rel, name, addr), rel,
+                 line, line + body.rstrip("\n").count("\n"), name, f, lines)
         u.addr = int(addr, 16)
-        line += body.count("\n") + 1
+        line += body.count("\n")
         here[name] = u
         units.append(u)
       for u in here.values():

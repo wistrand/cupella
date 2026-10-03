@@ -2,14 +2,15 @@
 
 Cupella is a set of scripts, a container, docs, and prompts; the coding agent that
 reads the docs and runs `./cupella` is interchangeable. This file says what a harness has
-to provide and how each known one provides it. Only Claude Code has been used for the
-analyses and benchmarks so far; the other sections are setup notes, not tested.
+to provide and how each known one provides it. Claude Code ran all benchmarks and the
+subagent stages. Codex and Antigravity have run analyses successfully. The notes for
+the other harnesses are untested.
 
 ## Contents
 
 - What a harness must provide
 - Claude Code
-- Other harnesses (Codex CLI, Gemini CLI, Cursor, others)
+- Other harnesses (Codex CLI, Antigravity, Gemini CLI, Cursor, others)
 - Known harness-specific behavior
 
 ## What a harness must provide
@@ -45,9 +46,9 @@ rule text followed by the stage prompt, and enforcing the role's header where it
 
 ## Other harnesses
 
-Codex CLI has run analyses in a workspace (2026-10, without subagent stages); the
-others are untested. The steps follow each harness's documented conventions as of
-2026-10; check them against its current docs.
+Codex CLI (in a workspace, without subagent stages) and Antigravity have run analyses
+successfully; the others are untested. The steps follow each harness's documented
+conventions as of 2026-10; check them against its current docs.
 
 - **Codex CLI** reads `AGENTS.md` itself. It has no subagent type definitions: run a
   stage as a separate `codex exec` session whose prompt is the role text

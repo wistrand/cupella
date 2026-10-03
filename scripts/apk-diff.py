@@ -81,6 +81,17 @@ def field(text, pattern):
   return m.group(1).strip() if m else None
 
 
+def certs(triage):
+  """Signer certificate SHA-256s: v2/v3 block lines, and keytool's v1 (JAR) fingerprints
+  (SHA256: AB:CD:...) normalized to lowercase hex."""
+  found = set(re.findall(r"cert \d+ sha256 ([0-9a-f]{64})", triage))
+  found |= set(re.findall(r"certificate sha256 ([0-9a-f]{64})", triage))
+  v1 = re.search(r"^-- v1 \(JAR\) signature\n(.*?)(?=^-- |^## |\Z)", triage, re.M | re.S)
+  for fp in re.findall(r"SHA256:\s*((?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2})\b", v1.group(1) if v1 else ""):
+    found.add(fp.replace(":", "").lower())
+  return found
+
+
 def packages(name, depth=3):
   text = read(name, os.path.join("dex", "classes.txt"))
   out = {}
@@ -119,9 +130,12 @@ def main():
                      ("verification", r"^RESULT: (.*)$")):
     va, vb = field(ta, pat), field(tb, pat)
     print("%-13s %s%s" % (label + ":", va, "" if va == vb else "  ->  %s" % vb))
-  ca = set(re.findall(r"cert \d+ sha256 ([0-9a-f]{64})", ta)) | set(re.findall(r"certificate sha256 ([0-9a-f]{64})", ta))
-  cb = set(re.findall(r"cert \d+ sha256 ([0-9a-f]{64})", tb)) | set(re.findall(r"certificate sha256 ([0-9a-f]{64})", tb))
-  if ca == cb:
+  ca, cb = certs(ta), certs(tb)
+  if not ca or not cb:
+    print("signer:       unknown (no certificate data%s)" % (
+      "" if not ca and not cb else " for %s" % (old if not ca else new)))
+    show("signing certificates (sha256)", ca - cb, cb - ca)
+  elif ca == cb:
     print("signer:       same certificate(s) %s" % ", ".join(sorted(c[:16] + "..." for c in ca)))
   else:
     print("signer:       CHANGED. An update signed with a different key cannot install over")

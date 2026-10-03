@@ -42,8 +42,8 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 
 | Script                        | Role                                                                    |
 |-------------------------------|-------------------------------------------------------------------------|
-| `unpack.sh`                   | stages 1-3: identity, unpack, decode, decompile, embedded payloads, `triage.txt` |
-| `scan.sh`                     | stage 4: pattern searches (`scan.txt`), structure leads, flows, jadx retry; the pattern table lives here |
+| `unpack.sh`                   | stage 1: identity, unpack, decode, decompile, embedded payloads, `triage.txt` |
+| `scan.sh`                     | stage 2: pattern searches (`scan.txt`), structure leads, flows, jadx retry; the pattern table lives here |
 | `apkunzip.py`                 | extracts every APK as Android reads it (fake encryption, shadowed entries), under decompression limits, without symlinks; writes `repaired.apk` when it finds anomalies |
 | `class-coverage.py`           | classes jadx did not produce, classes defined in more than one dex, misleading or overlong class names; in `triage.txt` |
 | `axml2xml.py`                 | binary XML to text, tolerant of tampered manifests; fallback when apktool fails |
@@ -109,8 +109,8 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella versions                                # tool versions in the image
 ./cupella sync                                    # in a workspace: refresh the doc copies now
 ./cupella help                                    # commands and scripts
-./cupella unpack.sh data/<path>/<name>.apk [-f]   # stages 1-3; skips steps already done, -f redoes them
-./cupella scan.sh <name> [source-subdir ...]      # stage 4; an explicit scope is saved and reused; --default-scope resets
+./cupella unpack.sh data/<path>/<name>.apk [-f]   # stage 1; skips steps already done, -f redoes them
+./cupella scan.sh <name> [source-subdir ...]      # stage 2; an explicit scope is saved and reused; --default-scope resets
 ./cupella manifest-summary.py <name>              # rerun alone after a manifest re-decode
 ./cupella structure-leads.py <name> [scope ...]   # rerun after native-decompile.sh
 ./cupella flows.py <name> [scope ...]             # rerun alone after changing sources or sinks

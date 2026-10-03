@@ -3,8 +3,8 @@
 
 The report's Findings name the code they rest on (Java files and lines, methods,
 native and Dart functions). Those functions are the answer key. For each lead
-source (scan.txt, structure-leads.txt, model-leads.txt) this script checks which
-findings the source pointed at, and how far down its list the first pointer was.
+source (scan.txt, structure-leads.txt, flows.txt, model-leads.txt) this script checks
+which findings the source pointed at, and how far down its list the first pointer was.
 
   covered   a lead names a function cited by the finding (or, for a finding that
             cites only a file, any function in that file)

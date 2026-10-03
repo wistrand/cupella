@@ -17,7 +17,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from elf import JAVA_VM, JNI_ENV, Elf  # noqa: E402
+from elf import JAVA_VM, JNI_ENV, PT_LOAD, Elf  # noqa: E402
 
 ZERO = re.compile(r"^\s*\w+\[(?:0x[0-9a-f]+|\d+)\] = '\\0';\s*$")
 TABLE_CALL = re.compile(r"\(\*\*\(code \*\*\)\(\*(\w+) \+ (0x[0-9a-f]+|\d+)\)\)")
@@ -30,6 +30,14 @@ def main():
     text = f.read()
   m = re.search(r"^// Image base ([0-9a-fA-F]+)", text, re.M)
   base = int(m.group(1), 16) if m else 0
+  # Ghidra rebases an image linked at 0 (a PIE .so) to its default base; an image linked
+  # elsewhere keeps its link addresses. shift = Ghidra address - ELF vaddr. Headers
+  # print the entry minus base, so header + base - shift is the vaddr in both cases.
+  loads = [va for t, _fl, _o, va, _fs, _ms in e.segments if t == PT_LOAD]
+  shift = base if not loads or min(loads) == 0 else 0
+
+  def header_vaddr(h):
+    return int(h, 16) + base - shift
 
   names = {}
   for i, a in enumerate(e.init_functions()):
@@ -41,12 +49,12 @@ def main():
   sigs = {fn: sig for table in tables for _a, _n, sig, fn in table}
 
   def rename(mo):
-    addr = int(mo.group(1), 16) - base
+    addr = int(mo.group(1), 16) - shift
     return names.get(addr, mo.group(0))
 
   text = re.sub(r"\bFUN_([0-9a-f]{8,16})\b", rename, text)
   for table in tables:
-    label = "%08x" % (table[0][0] + base)
+    label = "%08x" % (table[0][0] + shift)
     text = re.sub(r"(\b\w+_%s\b)" % label,
                   r"\1 /* JNINativeMethod[%d]: %s */" % (
                     len(table), ", ".join(n for _a, n, _s, _f in table[:8])), text)
@@ -62,14 +70,16 @@ def main():
 
   # 32-bit ARM loads addresses from literal pools: Ghidra shows the pool word as
   # DAT_<addr>. When that word points at a printable string or at a function, say which.
+  # DAT_ names carry Ghidra addresses; the ELF reader and the pointers stored in the
+  # file use ELF vaddrs. Everything below works in vaddrs.
   funcs = {}
   for mo in re.finditer(r"^// ---- (\w+) @ 0x([0-9a-f]+)", text, re.M):
-    funcs[int(mo.group(2), 16) + base] = mo.group(1)
+    funcs[header_vaddr(mo.group(2))] = mo.group(1)
 
   def pool_string(mo):
     if "/* ->" in mo.group(0):
       return mo.group(0)
-    target = e.read_word(int(mo.group(1), 16))
+    target = e.ptr_at(int(mo.group(1), 16) - shift)
     if target is None:
       return mo.group(0)
     fn = funcs.get(target & ~1)
@@ -100,8 +110,8 @@ def main():
       continue
     flush()
     mo = re.match(r"^// ---- (jni_\w+) @ 0x([0-9a-f]+)", line)
-    if mo and int(mo.group(2), 16) in sigs:
-      line += "   Java signature %s" % sigs[int(mo.group(2), 16)]
+    if mo and header_vaddr(mo.group(2)) in sigs:
+      line += "   Java signature %s" % sigs[header_vaddr(mo.group(2))]
     out.append(line)
   flush()
 

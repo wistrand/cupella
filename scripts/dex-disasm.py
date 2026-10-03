@@ -365,7 +365,12 @@ def main():
   if not paths:
     sys.exit("no dex files for %s" % src)
   query = args[1] if len(args) > 1 else ""
-  dexes = [(path, dexmod.Dex(open(path, "rb").read())) for path in paths]
+  dexes = []
+  for path in paths:  # one malformed dex must not stop the others
+    try:
+      dexes.append((path, dexmod.Dex(open(path, "rb").read())))
+    except (OSError, struct.error, ValueError) as e:
+      print("# skipped %s: %s" % (os.path.relpath(path, ROOT), e), file=sys.stderr)
   names = {cls for _, d in dexes for cls, _, _, _ in d.classes()}
   want, mname = query, None
   if "->" in query:
@@ -383,7 +388,11 @@ def main():
         if cls.startswith(want.rstrip(";")):
           print(cls, "(%s)" % os.path.relpath(path, ROOT))
           for idx, off in d.methods_of(data):
-            c, n, p, r, _ = d.method(idx)
+            try:
+              c, n, p, r, _ = d.method(idx)
+            except ValueError as e:
+              print("  ; method %d unreadable: %s" % (idx, e))
+              continue
             print("  %s(%s)%s%s" % (n, "".join(p), r, "" if off else "  [no code]"))
         continue
       if cls != want:
@@ -391,7 +400,11 @@ def main():
       found = True
       print("# %s in %s" % (cls, os.path.relpath(path, ROOT)))
       for idx, off in d.methods_of(data):
-        c, n, p, r, _ = d.method(idx)
+        try:
+          c, n, p, r, _ = d.method(idx)
+        except ValueError as e:
+          print("\n; method %d unreadable: %s" % (idx, e))
+          continue
         if mname and n != mname:
           continue
         if not off:
@@ -399,8 +412,11 @@ def main():
           continue
         try:
           disasm(d, c, n, p, r, off)
-        except (struct.error, IndexError) as e:
+        except (struct.error, IndexError, ValueError) as e:
           print("  ; decoding stopped: %s" % e)
+  for path, d in dexes:
+    for what, why in sorted(set(d.problems)):  # classes() runs more than once
+      print("; %s: %s skipped: %s" % (os.path.relpath(path, ROOT), what, why))
   if not listing and not found:
     sys.exit("class %s not found" % want)
 

@@ -36,15 +36,30 @@ def kind_of(path):
   return None
 
 
+def loaded_dex(raw):
+  """root dex files Android loads: classes.dex, classes2.dex, classes3.dex, ... up to the
+  first gap. classes1.dex, classes02.dex, or classes5.dex after a gap are not loaded and
+  count as embedded code."""
+  names = set(os.listdir(raw)) if os.path.isdir(raw) else set()
+  out, n = set(), 1
+  while True:
+    name = "classes.dex" if n == 1 else "classes%d.dex" % n
+    if name not in names:
+      return out
+    out.add(name)
+    n += 1
+
+
 def find(work):
   raw = os.path.join(work, "raw")
+  primary = loaded_dex(raw)
   out = []
   for dp, dn, fn in os.walk(raw):
     dn.sort()
     for f in sorted(fn):
       p = os.path.join(dp, f)
       rel = os.path.relpath(p, raw)
-      if "/" not in rel and rel.startswith("classes") and rel.endswith(".dex"):
+      if rel in primary:
         continue
       k = kind_of(p)
       if k:

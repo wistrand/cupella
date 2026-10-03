@@ -81,17 +81,23 @@ with zipfile.ZipFile("%s/tool.apk" % t, "w") as z:
   z.writestr("res/../../../escaped_tool_res", b"pwned")
   z.writestr("%s/escaped_tool_abs" % t, b"pwned")
 PY
-  mkdir -p "$t/w"
-  (cd "$t/w" && java -jar "$tools/apktool.jar" d -f -r -s -o "$t/w/apktool" "$t/tool.apk" > "$t/apktool.log" 2>&1) || true
-  "$tools/jadx/bin/jadx" -d "$t/w/jadx" "$t/tool.apk" > "$t/jadx.log" 2>&1 || true
+  # one tool at a time, each output removed before the next runs: an escape anywhere
+  # outside the running tool's own output dir (the other tool's included) is its own
   for tool in apktool jadx; do
-    esc=$(find "$t" -name 'escaped_tool_*' -not -path "$t/w/$tool/*" 2>/dev/null | grep -v "^$t/w/[a-z]*/" || true)
-    lnk=$(find "$t/w/$tool" -type l 2>/dev/null || true)
+    mkdir -p "$t/w"
+    if [ $tool = apktool ]; then
+      (cd "$t/w" && java -jar "$tools/apktool.jar" d -f -r -s -o "$t/w/apktool" "$t/tool.apk" > "$t/apktool.log" 2>&1) || true
+    else
+      "$tools/jadx/bin/jadx" -d "$t/w/jadx" "$t/tool.apk" > "$t/jadx.log" 2>&1 || true
+    fi
+    esc=$(find "$t" -name 'escaped_tool_*' -not -path "$t/w/$tool/*" 2>/dev/null || true)
+    lnk=$(find "$t/w" -type l 2>/dev/null || true)
     echo "$tool traversal: ${esc:+FAIL: $esc}${lnk:+ FAIL: symlink $lnk}${esc:-${lnk:-PASS}}"
-    rm -f $esc
     if [ $tool = apktool ]; then echo "  apktool log: $(tail -2 "$t/apktool.log" | tr '\n' ' ' | cut -c1-160)"
     else echo "  jadx wrote: $(find "$t/w/jadx" -type f 2>/dev/null | sed "s|^$t/w/||" | head -6 | tr '\n' ' ')"; fi
     [ $tool = apktool ] && echo "  apktool wrote: $(find "$t/w/apktool" -type f 2>/dev/null | sed "s|^$t/w/||" | head -6 | tr '\n' ' ')"
+    [ -z "$esc" ] || printf '%s\n' "$esc" | while IFS= read -r f; do rm -f "$f"; done
+    rm -rf "$t/w"
   done
 fi
 # the whole unpack stage: a symlink entry must not survive in work/
@@ -101,7 +107,7 @@ if [ -n "$tools" ]; then
   [ "$rc" = 0 ] || { echo "unpack.sh exit $rc:"; tail -5 "$t/unpack.log"; }
   w="$root/work/zipslip-fixture"
   links=$(find "$w" -type l 2>/dev/null | wc -l)
-  noted=$(grep -c 'symlink entries' "$w/triage.txt" 2>/dev/null || true)
+  noted=$(grep -ci 'symlink entries' "$w/triage.txt" 2>/dev/null || true)
   echo "unpack.sh symlink entry: $([ "$links" = 0 ] && [ "${noted:-0}" -gt 0 ] && echo PASS || echo "FAIL: $links links left, noted in triage: ${noted:-0}")"
   rm -rf "$w"
 fi
