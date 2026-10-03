@@ -1,0 +1,31 @@
+// excerpt of work/<name>/jadx/sources/defpackage/x0.java, lines 1-30 (jadx output, unedited)
+
+package defpackage;
+
+import android.os.Handler;
+import android.util.Log;
+import com.android.gplay.SDKService;
+
+/* JADX INFO: compiled from: r8-map-id-5b6417927863b876a25e8beb0f2e6be415943724a05951bd62249a1b2ee90921 */
+/* JADX INFO: loaded from: classes.dex */
+public final class x0 implements Runnable {
+    public final /* synthetic */ SDKService a;
+
+    public x0(SDKService sDKService) {
+        this.a = sDKService;
+    }
+
+    @Override // java.lang.Runnable
+    public final void run() {
+        SDKService sDKService = this.a;
+        try {
+            Log.i("SDKService", "not running, restarting!");
+            q.i(sDKService);
+        } catch (Exception unused) {
+        }
+        Handler handler = sDKService.b;
+        if (handler != null) {
+            handler.postDelayed(this, 5000L);
+        }
+    }
+}

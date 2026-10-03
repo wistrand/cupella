@@ -4,8 +4,11 @@
 > on a live malware sample and kept here to show what an analysis produces. It is not
 > updated when the scripts change. The `work/` paths it cites are not in the repository:
 > they are recreated by `./cupella unpack.sh`, `./cupella scan.sh`, Ghidra decompilation of
-> `assets/lol`, and the decryptor run, on the APK with the SHA-256 below. The signer's
-> subject is redacted. Indicators are kept on purpose; none of them was contacted.
+> `assets/lol`, and the decryptor run, on the APK with the SHA-256 below (the sample is
+> public on MalwareBazaar under that hash). The signer's subject is redacted. Indicators
+> are kept on purpose; none of them was contacted.
+> Some of the cited evidence, and the verifier's verdicts before the corrections, are in
+> [23282313-evidence/](23282313-evidence/README.md).
 
 Provided as malware. Evidence paths are relative to `work/23282313ee3edb3443ae8c0296b9b6ddf52501983093fd289f46d99e7d180402/`.
 

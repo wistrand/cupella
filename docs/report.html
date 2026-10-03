@@ -46,35 +46,80 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"
         integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr" crossorigin="anonymous"></script>
 <script>
-// Renders one report from docs/examples/ (?f=<file>.md). Reports quote text taken from
+// Renders one file from docs/examples/ (?f=<path>): .md as markdown, .txt and .xml as
+// text. Links between files under examples/ open here too. Reports quote text taken from
 // malware, so the HTML is sanitized and Mermaid runs with securityLevel "strict".
+const VIEWABLE = /\.(md|txt|xml)$/i;
+const SEGMENT = /^[A-Za-z0-9._-]+$/;
+
+// path under examples/ for href as seen from the file at path from, or null if it leaves
+// examples/ or names something this page does not show
+function resolve(from, href) {
+  const parts = from.split("/").slice(0, -1);
+  for (const seg of href.split(/[?#]/)[0].split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") { if (!parts.length) return null; parts.pop(); continue; }
+    if (!SEGMENT.test(seg)) return null;
+    parts.push(seg);
+  }
+  const path = parts.join("/");
+  return path && VIEWABLE.test(path) ? path : null;
+}
+
+function validPath(f) {
+  return VIEWABLE.test(f) && f.split("/").every(seg => SEGMENT.test(seg) && seg !== "." && seg !== "..");
+}
+
 (async function () {
   const out = document.getElementById("report");
   const f = new URLSearchParams(location.search).get("f") || "23282313-ddos-bot-loader.md";
-  if (!/^[A-Za-z0-9._-]+\.md$/.test(f)) { out.textContent = "Not an example report name."; return; }
+  if (!validPath(f)) { out.textContent = "Not a file under examples/ that this page shows."; return; }
   const url = "examples/" + f;
   document.getElementById("source").href = url;
-  let md;
+  let text;
   try {
     const r = await fetch(url);
     if (!r.ok) throw new Error(r.status + " " + r.statusText);
-    md = await r.text();
+    text = await r.text();
   } catch (e) {
     out.textContent = "Could not load " + url + " (" + e.message + "). Opened from disk, the page "
       + "cannot fetch it; serve docs/ over HTTP, e.g. python3 -m http.server -d docs.";
     return;
   }
-  out.innerHTML = DOMPurify.sanitize(marked.parse(md));
-  // reports name malicious hosts: never make them clickable. Only links within this
-  // site stay links; every absolute or scheme link becomes plain text.
+  if (!/\.md$/i.test(f)) {
+    // evidence files: shown as text, never interpreted
+    const h = document.createElement("h1"); h.textContent = f.split("/").pop();
+    const back = document.createElement("p"); back.className = "small";
+    const dir = f.split("/").slice(0, -1).join("/");
+    const readme = resolve(f, "README.md");
+    if (readme) { const a = document.createElement("a"); a.href = "report.html?f=" + readme; a.textContent = "back to " + (dir || "examples") + "/README.md"; back.appendChild(a); }
+    const pre = document.createElement("pre"); const code = document.createElement("code");
+    code.textContent = text; pre.appendChild(code);
+    out.replaceChildren(h, back, pre);
+    document.title = f.split("/").pop();
+    return;
+  }
+  // Reports name malicious hosts: nothing in them may link to or load from another host.
+  // DOMPurify strips whitespace and control characters from a URL before this test, and
+  // drops any href/src that fails it: no scheme, no "//" or backslash host forms. That
+  // covers links and images alike; only relative URLs within this site survive.
+  const RELATIVE_ONLY = /^(?![a-z][a-z0-9+.\-]*:)(?![\/\\]{2})(?!\/\\)(?!\\)/i;
+  out.innerHTML = DOMPurify.sanitize(marked.parse(text), { ALLOWED_URI_REGEXP: RELATIVE_ONLY });
+  // relative links: files under examples/ open in this page, a directory link opens its
+  // README.md; anything else becomes plain text
   out.querySelectorAll("a[href]").forEach(a => {
-    const href = a.getAttribute("href");
-    if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(href)) {
-      const t = document.createElement("span");
-      t.textContent = a.textContent;
-      t.title = "link removed: example reports never link to hosts they name";
-      a.replaceWith(t);
-    }
+    const h = a.getAttribute("href");
+    if (h.startsWith("#")) return;
+    const target = resolve(f, h.endsWith("/") ? h + "README.md" : h);
+    if (target) a.setAttribute("href", "report.html?f=" + target);
+    else a.removeAttribute("href");
+  });
+  // a link whose href was dropped stays readable as plain text
+  out.querySelectorAll("a:not([href])").forEach(a => {
+    const t = document.createElement("span");
+    t.textContent = a.textContent;
+    t.title = "link removed: example pages link only to other files under examples/";
+    a.replaceWith(t);
   });
   document.title = (out.querySelector("h1") || {}).textContent || "Example report";
   out.querySelectorAll("table").forEach(t => {

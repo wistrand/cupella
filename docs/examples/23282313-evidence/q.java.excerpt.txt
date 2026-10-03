@@ -1,0 +1,88 @@
+// excerpt of work/<name>/jadx/sources/defpackage/q.java, lines 585-670 (jadx output, unedited)
+
+    public static void i(Context context) {
+        File file = new File(context.getFilesDir(), "libandroid_runtime.so");
+        if (!file.exists()) {
+            try {
+                InputStream inputStreamOpen = context.getAssets().open("lol");
+                try {
+                    FileOutputStream fileOutputStream = new FileOutputStream(file);
+                    try {
+                        byte[] bArr = new byte[8192];
+                        while (true) {
+                            int i2 = inputStreamOpen.read(bArr);
+                            if (i2 <= 0) {
+                                break;
+                            } else {
+                                fileOutputStream.write(bArr, 0, i2);
+                            }
+                            if (inputStreamOpen != null) {
+                                try {
+                                    inputStreamOpen.close();
+                                } catch (Throwable th) {
+                                    th.addSuppressed(th);
+                                }
+                            }
+                            throw th;
+                        }
+                        if (!file.setExecutable(true)) {
+                            ProcessBuilder processBuilder = new ProcessBuilder("/system/bin/chmod", "777", file.getAbsolutePath());
+                            processBuilder.redirectErrorStream(true);
+                            try {
+                                processBuilder.start().waitFor();
+                            } catch (IOException | InterruptedException unused) {
+                            }
+                        }
+                        fileOutputStream.close();
+                        inputStreamOpen.close();
+                    } catch (Throwable th2) {
+                        try {
+                            fileOutputStream.close();
+                        } catch (Throwable th3) {
+                            th2.addSuppressed(th3);
+                        }
+                        throw th2;
+                    }
+                } catch (Throwable th4) {
+                    if (inputStreamOpen != null) {
+                        inputStreamOpen.close();
+                    }
+                    throw th4;
+                }
+            } catch (IOException e2) {
+                Log.e("Util", "failed to extract binary from assets", e2);
+                file = null;
+            }
+        }
+        if (file == null) {
+            Log.e("Util", "no binary for this ABI");
+            return;
+        }
+        Log.i("Util", "executeNetwork: " + file.getAbsolutePath() + " play");
+        if (!file.exists()) {
+            Log.e("Util", "binary not found: " + file.getAbsolutePath());
+            return;
+        }
+        if (!file.canExecute() && !file.setExecutable(true)) {
+            Log.w("Util", "setExecutable failed, trying chmod 777: " + file.getAbsolutePath());
+            ProcessBuilder processBuilder2 = new ProcessBuilder("/system/bin/chmod", "777", file.getAbsolutePath());
+            processBuilder2.redirectErrorStream(true);
+            try {
+                processBuilder2.start().waitFor();
+            } catch (IOException | InterruptedException unused2) {
+            }
+        }
+        ProcessBuilder processBuilder3 = new ProcessBuilder(file.getAbsolutePath(), "play");
+        processBuilder3.redirectErrorStream(true);
+        try {
+            Process processStart = processBuilder3.start();
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(processStart.getInputStream()));
+            while (true) {
+                String line = bufferedReader.readLine();
+                if (line == null) {
+                    Log.i("Util", "binary exit code: " + processStart.waitFor());
+                    return;
+                }
+                Log.i("Util", "binary: " + line);
+            }
+        } catch (IOException unused3) {

@@ -1,0 +1,59 @@
+// excerpt of work/<name>/jadx/sources/com/android/gplay/SDKService.java, lines 212-268 (jadx output, unedited)
+
+    }
+
+    public final void b() {
+        PowerManager powerManager;
+        if (Build.VERSION.SDK_INT < 23 || (powerManager = (PowerManager) getSystemService("power")) == null || powerManager.isIgnoringBatteryOptimizations(getPackageName())) {
+            return;
+        }
+        Intent intent = new Intent("android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS");
+        intent.setData(Uri.parse("package:" + getPackageName()));
+        intent.addFlags(268435456);
+        startActivity(intent);
+    }
+
+    @Override // android.app.Service
+    public final IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override // android.app.Service
+    public final void onCreate() {
+        PowerManager powerManager;
+        super.onCreate();
+        int i = Build.VERSION.SDK_INT;
+        if (i >= 26) {
+            NotificationChannel notificationChannel = new NotificationChannel("network_sync_channel", "Network Service", 2);
+            NotificationManager notificationManager = (NotificationManager) getSystemService(NotificationManager.class);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(notificationChannel);
+            }
+        }
+        if (i >= 34) {
+            startForeground(1, a(), 1);
+        } else {
+            startForeground(1, a());
+        }
+        if (this.c == null && (powerManager = (PowerManager) getSystemService("power")) != null) {
+            PowerManager.WakeLock wakeLockNewWakeLock = powerManager.newWakeLock(1, "LogHandler::WakeLock");
+            this.c = wakeLockNewWakeLock;
+            wakeLockNewWakeLock.setReferenceCounted(false);
+        }
+        PowerManager.WakeLock wakeLock = this.c;
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            this.c.acquire();
+        }
+        if (this.a != null) {
+            return;
+        }
+        HandlerThread handlerThread = new HandlerThread("NetworkTaskThread");
+        this.a = handlerThread;
+        handlerThread.start();
+        Handler handler = new Handler(this.a.getLooper());
+        this.b = handler;
+        handler.post(this.d);
+        try {
+            b();
+        } catch (Exception unused) {
+        }

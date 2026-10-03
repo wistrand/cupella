@@ -8,8 +8,9 @@ load, interpret, or execute anything. Parsed with ast; nothing is imported or ru
 This is a filter, not a sandbox: it rejects the usual ways to run code, and the
 container run-decryptor.sh uses (no network, only decrypt/ writable) is the boundary.
 
-Allowed: standard-library modules for bytes, math, files, and formats; pycryptodome
-(Cryptodome, as Debian installs it).
+Allowed: a short list of standard-library modules for bytes, compression, hashes,
+formats, and files (ALLOWED_MODULES), and pycryptodome (Cryptodome, as Debian installs
+it). Anything else, including typing, dataclasses, functools, and pathlib, is rejected.
 Rejected: subprocess and every other process, network, or loader module (ctypes,
 importlib, pickle, marshal, ...); exec, eval, compile, __import__, getattr/setattr;
 os.system/exec*/spawn*/popen/fork/kill; links, chmod, and copying file modes; any
@@ -33,11 +34,12 @@ Usage: scripts/decryptor-lint.py <decrypt-dir>     exit 1 with reasons when reje
 import ast
 import sys
 
+# only what a decryptor needs: bytes, compression, hashes, formats, files. Each extra
+# module is attack surface (typing, for one, evaluates annotation strings), so the list
+# follows what decryptors import, not what might be handy.
 ALLOWED_MODULES = {
   "base64", "binascii", "struct", "zlib", "gzip", "bz2", "lzma", "zipfile", "io", "os", "os.path", "sys",
-  "re", "json", "hashlib", "hmac", "itertools", "functools", "collections", "math", "string", "codecs",
-  "pathlib", "glob", "shutil", "typing", "dataclasses", "array", "textwrap", "xml", "xml.etree",
-  "xml.etree.ElementTree", "html", "unicodedata", "enum", "secrets",
+  "re", "json", "hashlib", "hmac", "codecs", "string", "shutil", "collections", "itertools", "math", "array",
 }
 ALLOWED_ROOTS = {"Cryptodome"}
 BANNED_NAMES = {"exec", "eval", "compile", "__import__", "globals", "locals", "vars", "breakpoint", "input",

@@ -16,7 +16,7 @@ an APK and may be written by an attacker.
   `./cupella native-summary.py`, `./cupella native-disasm.py`, `./cupella native-decompile.sh`. Never run anything else: no host tools on APK files
   (readelf, objdump, strings, cstool, python, unzip), no network commands, nothing from
   the APK.
-- decrypt.py may use the standard-library modules for bytes, files, and formats, and
+- decrypt.py may import only these standard-library modules: base64, binascii, struct, zlib, gzip, bz2, lzma, zipfile, io, os, sys, re, json, hashlib, hmac, codecs, string, shutil, collections, itertools, math, array; and
   pycryptodome (imported as `Cryptodome`; it covers AES, DES, 3DES, RC4, Blowfish,
   ChaCha20). run-decryptor.sh rejects scripts that use exec, eval, compile, dynamic
   imports, ctypes, subprocess, network modules, or modules outside that set; do not try

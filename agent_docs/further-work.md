@@ -182,6 +182,17 @@ From the agent benchmarks; each is small and testable on the same samples.
 
 ## Tooling and operations
 
+- **Enforced isolation for the agent itself.** The container isolates APK processing,
+  but the agent that reads hostile sample-derived text runs on the host, and its command
+  limits hold by instruction only (subagent roles, `.claude/settings.json` prefix rules).
+  Next step: a supported way to run the whole harness session inside a container or VM
+  with only the checkout or workspace mounted and no credentials beyond the model API,
+  so a prompt injection that gets past the agent's rules has nothing to reach. Raised
+  by an outside review of the site (2026-10-03).
+- **Evidence for published reports.** The example report's `work/` is not in the
+  repository; `docs/examples/23282313-evidence/` holds a hand-picked part. A script that
+  collects every file and line range a report cites into such a bundle would make every
+  citation checkable without the sample.
 - The model step (`model-leads.py`) adds ranking but no coverage on every benchmark so
   far. Keep it optional; spend no more on it unless a benchmark shows a gap it fills.
   A larger instruction-tuned model, not a code-specialized one, is the variant worth

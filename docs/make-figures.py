@@ -205,6 +205,9 @@ html = open(page).read()
 for svg, ident in ((hero, "hero-t"), (flow, "flow-t"), (layers, "lay-t"), (ghera, "gh-t"), (maleval, "mv-t"), (dec, "dc-t")):
   html, n = re.subn(r'<svg viewBox="[^"]*" role="img" aria-labelledby="%s">.*?</svg>' % ident, lambda m: svg, html, flags=re.S)
   print("%s: %d replaced" % (ident, n))
-html, n = re.subn(r"<tbody>.*?</tbody>", lambda m: results_tbody, html, count=1, flags=re.S)
+html, n = re.subn(r'(<table id="results-table"[^>]*>.*?)<tbody>.*?</tbody>',
+                  lambda m: m.group(1) + results_tbody, html, count=1, flags=re.S)
+if n != 1:
+  raise SystemExit('docs/index.html: no <table id="results-table"> with a <tbody>')
 print("results table: %d replaced" % n)
 open(page, "w").write(html)

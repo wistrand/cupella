@@ -1,0 +1,51 @@
+// excerpt of work/<name>/jadx/sources/com/android/gplay/BootReceiver.java, lines 1-49 (jadx output, unedited)
+
+package com.android.gplay;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+import android.os.Handler;
+import android.util.Log;
+import defpackage.p;
+import defpackage.r;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+
+/* JADX INFO: compiled from: r8-map-id-5b6417927863b876a25e8beb0f2e6be415943724a05951bd62249a1b2ee90921 */
+/* JADX INFO: loaded from: classes.dex */
+public class BootReceiver extends BroadcastReceiver {
+    public static final List a;
+
+    static {
+        Object[] objArr = {"android.intent.action.BOOT_COMPLETED", "android.intent.action.LOCKED_BOOT_COMPLETED", "android.intent.action.USER_UNLOCKED"};
+        ArrayList arrayList = new ArrayList(3);
+        for (int i = 0; i < 3; i++) {
+            Object obj = objArr[i];
+            Objects.requireNonNull(obj);
+            arrayList.add(obj);
+        }
+        a = Collections.unmodifiableList(arrayList);
+    }
+
+    @Override // android.content.BroadcastReceiver
+    public final void onReceive(Context context, Intent intent) {
+        String action = intent.getAction();
+        Log.i("BootReceiver", action == null ? "null" : action);
+        if (a.contains(action)) {
+            try {
+                Intent intent2 = new Intent(context, (Class<?>) SDKService.class);
+                if (Build.VERSION.SDK_INT >= 26) {
+                    r.b(context, intent2);
+                } else {
+                    context.startService(intent2);
+                }
+                new Handler().postDelayed(new p(context, 0), 15000L);
+            } catch (Exception unused) {
+            }
+        }
+    }
+}
