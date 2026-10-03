@@ -88,7 +88,10 @@ def main():
     st = e.printable_cstr(target, minlen=3, limit=200)
     if st is None or e.is_code(target):
       return mo.group(0)
-    return '%s /* -> "%s" */' % (mo.group(0), st[:90].replace("*/", "* /").replace("\n", "\\n"))
+    # escape line breaks and tabs: a raw \r would count as a line in some readers and not
+    # in others, and shift every later line number cited from this file
+    st = st[:90].replace("*/", "* /").replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
+    return '%s /* -> "%s" */' % (mo.group(0), st)
 
   if not e.is64:
     text = re.sub(r"\bDAT_([0-9a-f]{8})\b(?! /\* ->)", pool_string, text)

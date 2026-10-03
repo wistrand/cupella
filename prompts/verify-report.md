@@ -11,6 +11,7 @@ For each claim in Summary, Network, Data handling, Permissions, Native code, and
 2. Is anything counted (commands, components, permissions, layers) counted right? Count it yourself.
 3. Is the claim stronger than the code: "every", "always", "on by default", a consequence or purpose the code does not show? Is there a guard, a condition, or a fallback the report leaves out?
 4. For a vulnerability: can an attacker reach it (exported component, deep link, broadcast, web page, shared file), and is there a guard that defeats it?
+5. For each behavior map (Mermaid block): does each edge exist in the code (a call, or a thread or Handler post the text says was added by reading)? A finding that rests on a call chain and has no map is an omission.
 
 Verdict per claim: "holds", "overstated" (true in part; say which part), or "wrong" (the code contradicts it or the citation does not support it). Give a path:line for every verdict other than "holds". Do not add new findings; list anything important the report leaves out under "Omissions", with path:line.
 

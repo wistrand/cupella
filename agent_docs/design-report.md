@@ -108,7 +108,10 @@ handler that reaches SMS sending), not for single-function findings. The map sho
 what the call graph contains; reflection, native calls, and dynamically loaded code do
 not appear in it, so say when the chain was completed by reading. In R8-obfuscated code
 check each edge in the source before using a map: merged lambda classes create false
-edges ([gotchas.md](gotchas.md)).
+edges ([gotchas.md](gotchas.md)). Handler posts and new threads are not edges in the graph;
+add them by hand and label them (`-->|Handler.post, read|`). In Ghidra output, callers
+inside the static libc region are often literal-pool words, not calls. Say above the
+block what was removed and added.
 
 ## Evidence rules
 

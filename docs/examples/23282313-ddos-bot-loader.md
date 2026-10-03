@@ -180,6 +180,32 @@ inference from the code, not a family match.
      targeting API 29 or higher; this app targets 37 (`triage.txt`), so the exec likely fails there
      and the bot runs only on Android 9 and older (minSdk 19). The binary is 32-bit ARM, so it also
      needs a device with 32-bit support. Both inferred from platform rules, not tested.
+   Behavior map (`./cupella behavior-map.py <name> q.i`, edited after checking each edge):
+   the generated graph also showed androidx startup (`h.a` > `h.b` > `p.run`) reaching `q.i`;
+   that is a merged-lambda edge (`p` case 1 runs the profile installer, only case 0 calls
+   `q.i`) and is removed. The `SDKService.onCreate` > `x0.run` edge is a `Handler.post`,
+   which the call graph does not follow; it was added by reading
+   (`jadx/sources/com/android/gplay/SDKService.java:264`).
+
+   ```mermaid
+   flowchart LR
+     e1(["activity onStart<br/>MainActivity.onStart :12"])
+     e2(["receiver onReceive<br/>BootReceiver.onReceive :33"])
+     s1["SDKService.onCreate :231"]
+     n2["x0.run :17<br/>reposts itself 5 s after q.i returns"]
+     n1["p.run :27<br/>case 0, 15 s after boot"]
+     n0[["q.i :585<br/>copy assets/lol, chmod, run with play"]]
+     e1 -->|startForegroundService| s1
+     e2 -->|startForegroundService| s1
+     e2 -->|Handler.postDelayed| n1
+     s1 -->|Handler.post, read| n2
+     n1 --> n0
+     n2 --> n0
+     c0(("process"))
+     n0 -.-> c0
+     c1(("file permissions"))
+     n0 -.-> c1
+   ```
 2. **Disguise and staying alive** (T1655, T1541). Package `com.android.gplay`, label "Logcat", no
    launcher entry, task excluded from recents (`apktool/AndroidManifest.xml:22`). A foreground
    service titled "Network Service" / "Running" with a partial wake lock
@@ -203,6 +229,37 @@ inference from the code, not a family match.
    (IPv4 and netmask), and options (`native/other/lol.c:680-723`). `FUN_00008aa8` forks the
    attack handler from a table of 19 entries and a second child that kills it when the duration
    ends (`native/other/lol.c:609-654`). Confirmed.
+   Behavior map, native (`./cupella behavior-map.py <name> FUN_00008b94`, edited after
+   checking each edge in `native/other/lol.c`): the generated graph also listed callers in
+   the static libc region (`lol.c:56433` and after); those are literal-pool words Ghidra
+   mislabels, not calls, and are removed. C2 discovery and the attack table were added from
+   the same call sites in main (`native/other/lol.c:4610`, `native/other/lol.c:4698`,
+   `native/other/lol.c:4734`, `native/other/lol.c:4746`, `native/other/lol.c:4752`). The
+   attack handlers are reached through a function pointer, which the graph does not follow.
+
+   ```mermaid
+   flowchart LR
+     e0(["native entry<br/>entry :49"])
+     m["FUN_0000f564 main :4539"]
+     t["FUN_00008da0 :778<br/>registers 19 attack handlers"]
+     d1["FUN_000117e0 :6007<br/>ENS name, then /nodes?key="]
+     d2["FUN_00011734 :5972<br/>second ENS name"]
+     d3["FUN_00011e6c :6256<br/>SNS name via HTTPS proxy"]
+     q["FUN_00011108 :5709<br/>eth_call to RPC hosts"]
+     p[["FUN_00008b94 :662<br/>parse command frame"]]
+     x["FUN_00008aa8 :596<br/>fork handler and timer"]
+     h(("attack handler<br/>by table index"))
+     e0 --> m
+     m --> t
+     m --> d1
+     m --> d2
+     m --> d3
+     d1 --> q
+     d2 --> q
+     m -->|78-byte frame| p
+     p --> x
+     x -.->|function pointer, read| h
+   ```
 5. **Attack routines.** `FUN_00008da0` registers 19 handlers (`native/other/lol.c:784-821`).
    Strings in the binary include HTTP request templates, cookie headers, and 15 browser
    user-agent strings (`native-summary.txt:57-72`), so at least one routine is an HTTP flood (likely).

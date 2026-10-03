@@ -64,7 +64,7 @@ def load_script(filename):
 
 
 def _java_file_units(path, rel):
-  with open(path, errors="replace") as fh:
+  with open(path, errors="replace", newline="") as fh:  # lines on \n only
     lines = fh.read().split("\n")
   out = []
   cur, depth, start, name, sig = None, 0, 0, "?", ""
@@ -364,7 +364,7 @@ def native_units(work):
       if not f.endswith(".c"):
         continue
       rel = os.path.relpath(os.path.join(dp, f), work)
-      with open(os.path.join(dp, f), errors="replace") as fh:
+      with open(os.path.join(dp, f), errors="replace", newline="") as fh:  # lines on \n only
         text = fh.read()
       parts = re.split(r"(?m)^// ---- (\S+) @ (0x[0-9a-f]+).*$", text)
       here = {}

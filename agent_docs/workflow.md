@@ -200,6 +200,10 @@ Before telling the user a report is done:
 - Every feature claimed as a capability passes its gate: its permission is requested,
   its native library ships, its operator option is on by default or the report says
   it is off. Otherwise it is reported as present but inert.
+- Every finding that rests on a call chain across several functions has a behavior map
+  (`./cupella behavior-map.py`, [design-report.md](design-report.md) "Behavior maps"), with
+  each edge checked in the code: false edges removed, edges the graph cannot follow
+  (Handler posts, threads, function pointers) added and marked as read.
 - Inferred claims are marked as inferred; open questions are listed.
 - No section still reads "not reached", unless the run was stopped short or was a
   budget run and the Summary says so.

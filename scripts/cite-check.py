@@ -81,7 +81,7 @@ class Tree:
     if rel not in self._lines and not os.path.isfile(os.path.join(self.work, rel)):
       return []
     if rel not in self._lines:
-      with open(os.path.join(self.work, rel), errors="replace") as f:
+      with open(os.path.join(self.work, rel), errors="replace", newline="") as f:  # lines on \n only
         lines = f.read().split("\n")
       if lines and lines[-1] == "":
         lines.pop()  # the file ends with a newline: no line after it

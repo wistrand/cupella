@@ -176,7 +176,9 @@ From the agent benchmarks; each is small and testable on the same samples.
   as a query tool.
 - **Behavior maps** (`behavior-map.py`, 2026-10-03) use the scan scope plus the target's
   top package; callers outside it (bundled library code such as an embedded HTTP server) end the
-  chain early. Not yet used in a report.
+  chain early. First used on 2026-10-03 (the BTMOB and DDoS-bot reports): every generated
+  map needed edits. Merged-lambda classes produced false edges, Handler posts and threads
+  were missing, and Ghidra literal-pool words showed up as callers of native functions.
 
 ## Tooling and operations
 

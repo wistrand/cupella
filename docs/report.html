@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Example report</title>
+<meta name="description" content="A Cupella example report, rendered from its markdown source.">
+<link rel="stylesheet" href="style.css">
+<style>
+  .report { max-width: 860px; }
+  .report h1 { font-size: 30px; line-height: 1.25; }
+  .report h2 { margin-top: 36px; }
+  .report pre { overflow-x: auto; background: var(--code-bg); padding: 12px; border-radius: 6px; font-size: 13px; }
+  .report code { font-family: var(--mono); font-size: 0.88em; overflow-wrap: anywhere; }
+  .report pre code { overflow-wrap: normal; }
+  .report table { min-width: 0; font-size: 14px; }
+  .report th, .report td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .report blockquote { margin: 16px 0; padding: 8px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); }
+  .report .mermaid { background: #fff; border-radius: 6px; padding: 12px; overflow-x: auto; margin: 12px 0; }
+  .table-scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html">cupel<span>la</span></a>
+    <nav>
+      <a href="index.html">Home</a>
+      <a id="source" href="#">Markdown source</a>
+      <a href="https://github.com/wistrand/cupella">GitHub</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+  <article class="report" id="report"><p class="small">Loading the report...</p></article>
+</main>
+<footer>
+  <div class="wrap">Cupella · static analysis of Android apps · Apache License 2.0</div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"
+        integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"
+        integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"
+        integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr" crossorigin="anonymous"></script>
+<script>
+// Renders one report from docs/examples/ (?f=<file>.md). Reports quote text taken from
+// malware, so the HTML is sanitized and Mermaid runs with securityLevel "strict".
+(async function () {
+  const out = document.getElementById("report");
+  const f = new URLSearchParams(location.search).get("f") || "23282313-ddos-bot-loader.md";
+  if (!/^[A-Za-z0-9._-]+\.md$/.test(f)) { out.textContent = "Not an example report name."; return; }
+  const url = "examples/" + f;
+  document.getElementById("source").href = url;
+  let md;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status + " " + r.statusText);
+    md = await r.text();
+  } catch (e) {
+    out.textContent = "Could not load " + url + " (" + e.message + "). Opened from disk, the page "
+      + "cannot fetch it; serve docs/ over HTTP, e.g. python3 -m http.server -d docs.";
+    return;
+  }
+  out.innerHTML = DOMPurify.sanitize(marked.parse(md));
+  document.title = (out.querySelector("h1") || {}).textContent || "Example report";
+  out.querySelectorAll("table").forEach(t => {
+    const w = document.createElement("div"); w.className = "table-scroll";
+    t.parentNode.insertBefore(w, t); w.appendChild(t);
+  });
+  const blocks = out.querySelectorAll("pre code.language-mermaid");
+  blocks.forEach(c => {
+    const d = document.createElement("div"); d.className = "mermaid";
+    d.textContent = c.textContent;
+    c.parentNode.replaceWith(d);
+  });
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
+  try { await mermaid.run({ querySelector: ".report .mermaid" }); } catch (e) { console.error(e); }
+})();
+</script>
+</body>
+</html>

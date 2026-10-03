@@ -240,6 +240,13 @@ app, and malware is named by its public family (BTMOB, Octo).
 - **Imports can be bypassed.** Raw syscalls (`svc #0`) and manual symbol lookup via
   `dlsym` leave no named import. An app-specific library with almost no imports is a
   reason to read more, not less.
+- **Raw carriage returns shift line numbers (verified).** Ghidra string annotations in
+  the DDoS-bot sample's `lol.c` carried raw `\r` from HTTP strings. Python's text mode
+  counts a lone `\r` as a line break and grep does not, so native function lines in
+  `xref.py` and `behavior-map.py` were 17 lines late by line 660. The scripts now read
+  with `newline=""`, and `postprocess.py` escapes `\r`, `\n`, and `\t`. C files
+  decompiled before 2026-10-03 still contain raw `\r`; `grep -c $'\r'` explains odd line
+  counts in other tools.
 
 ## Shell and scripts
 

@@ -21,7 +21,8 @@ def lab(x,y,t,anchor="middle"): return '<text x="%d" y="%d" class="s-m" text-anc
 # 0. hero: ore in; the cupel (scripts, offline) and the agent as two nodes on a loop; report out
 h=['<svg viewBox="0 -46 760 290" role="img" aria-labelledby="hero-t"><title id="hero-t">What Cupella does: the APK goes into a loop between scripts in an offline container and the agent, which reads the leads and sends new runs back; a step no script covers is added to the scripts, so the next APK gets it; the report cites a file and line for each claim</title>',DEFS.replace('id="ah"','id="hah"').replace('id="aha"','id="haha"')]
 def hlab(x,t,m):
-  return '<text x="%d" y="214" class="h-t" text-anchor="middle">%s</text><text x="%d" y="234" class="h-m" text-anchor="middle">%s</text>'%(x,esc(t),x,esc(m))
+  # h-lab: hidden on phones, where the same labels follow the drawing as text (.hero-steps)
+  return '<text x="%d" y="214" class="h-t h-lab" text-anchor="middle">%s</text><text x="%d" y="234" class="h-m h-lab" text-anchor="middle">%s</text>'%(x,esc(t),x,esc(m))
 # the APK: code, a locked payload, a native library, assets
 h.append('<rect x="20" y="40" width="140" height="150" rx="10" class="s-box"/>')
 for y,w in ((58,48),(74,70),(90,56)): h.append('<rect x="36" y="%d" width="%d" height="9" rx="2" class="h-ore"/>'%(y,w))
@@ -115,50 +116,54 @@ g.append('<text x="410" y="216" class="s-t" text-anchor="middle">what the app do
 g.append('</svg>')
 layers="".join(g)
 
-# 3. Ghera chart
-# None: the tool has no rules for this benchmark's subject; shown as not applicable, not as 0
-tools=[("Cupella",55,6,True),("MobSF 4.5.3",20,6,False),("Quark-Engine 26.9.1",None,None,False)]
-W0,W1=170,770; sc=(W1-W0)/59.0
-c=['<svg viewBox="0 0 820 230" role="img" aria-labelledby="gh-t"><title id="gh-t">Ghera: vulnerabilities found of 59, and fixed apps flagged; Quark-Engine not applicable</title>']
-for v in (0,10,20,30,40,50,59):
-  x=W0+v*sc; c.append('<line x1="%d" y1="20" x2="%d" y2="196" class="s-grid"/><text x="%d" y="214" class="s-m" text-anchor="middle">%d</text>'%(x,x,x,v))
-for i,(n,a,b,us) in enumerate(tools):
-  y=30+i*58
-  c.append('<text x="%d" y="%d" class="s-t" text-anchor="end">%s</text>'%(W0-12,y+20,esc(n)))
-  if a is None:
-    c.append('<text x="%d" y="%d" class="s-m">not applicable: a malware-behavior engine with no vulnerability rules</text>'%(W0+6,y+15))
-    continue
-  c.append('<rect x="%d" y="%d" width="%d" height="20" class="%s"/>'%(W0,y,max(a*sc,1),"s-bar-us" if us else "s-bar"))
-  c.append('<text x="%d" y="%d" class="s-num">%d found</text>'%(W0+max(a*sc,1)+6,y+15,a))
-  c.append('<rect x="%d" y="%d" width="%d" height="12" class="s-bar2"/>'%(W0,y+25,max(b*sc,1)))
-  c.append('<text x="%d" y="%d" class="s-m">%d also in the fixed app</text>'%(W0+max(b*sc,1)+6,y+35,b))
-c.append('</svg>'); ghera="".join(c)
+# Result charts. Numbers from agent_docs/benchmarks.md ("Tool comparison" and the
+# decryption effect); update them here after a rerun. Narrow layout (labels above the
+# bars) so a chart fits a phone without scrolling sideways.
+CW, L, R = 520, 12, 508  # viewBox width, bar start, bar end
+
+def bar_chart(ident, title, rows, vmax, ticks, tick_fmt):
+  """rows: (label, line text, primary value or None, secondary value or None, ours)"""
+  sc = (R - L) / float(vmax)
+  rowh = 80
+  h = 30 + rowh * len(rows) + 26
+  c = ['<svg viewBox="0 0 %d %d" role="img" aria-labelledby="%s"><title id="%s">%s</title>' % (CW, h, ident, ident, esc(title))]
+  base = 30 + rowh * len(rows)
+  ticks = list(ticks)
+  for v in ticks:
+    x = L + v * sc
+    anchor = "start" if v == ticks[0] else "end" if v == ticks[-1] else "middle"
+    c.append('<text x="%d" y="%d" class="s-m" text-anchor="%s">%s</text>' % (x, base + 18, anchor, tick_fmt(v)))
+  for i, (name, text, a, b, us) in enumerate(rows):
+    y = 30 + i * rowh
+    for v in (ticks if a is not None else ()):  # grid only behind bars, not through labels
+      x = L + v * sc
+      c.append('<line x1="%d" y1="%d" x2="%d" y2="%d" class="s-grid"/>' % (x, y + 24, x, y + 60))
+    c.append('<text x="%d" y="%d" class="s-t">%s</text><text x="%d" y="%d" class="s-m">%s</text>' % (L, y + 4, esc(name), L, y + 20, esc(text)))
+    if a is None:
+      continue
+    c.append('<rect x="%d" y="%d" width="%d" height="14" class="%s"/>' % (L, y + 28, max(a * sc, 1), "s-bar-us" if us else "s-bar"))
+    if b is not None:
+      c.append('<rect x="%d" y="%d" width="%d" height="8" class="s-bar2"/>' % (L, y + 46, max(b * sc, 1)))
+  c.append('</svg>')
+  return "".join(c)
+
+# 3. Ghera chart. None: no rules for this benchmark's subject; not applicable, not 0
+tools = [("Cupella", 55, 6, True), ("MobSF 4.5.3", 20, 6, False), ("Quark-Engine 26.9.1", None, None, False)]
+ghera = bar_chart("gh-t", "Ghera: vulnerabilities found of 59 (filled bar) and fixed apps also flagged (outline); Quark-Engine not applicable",
+  [(n, ("%d of 59 found; %d also in the fixed app" % (a, b)) if a is not None else
+       "not applicable: a malware-behavior engine with no vulnerability rules", a, b, us) for n, a, b, us in tools],
+  59, (0, 10, 20, 30, 40, 50, 59), str)
 
 # 4. MalEval behavior chart
-mt=[("Cupella",65,70,True),("MobSF 4.5.3",19,60,False),("Quark-Engine 26.9.1",26,56,False)]
-sc=(W1-W0)/100.0
-d=['<svg viewBox="0 0 820 230" role="img" aria-labelledby="mv-t"><title id="mv-t">MalEval: behavior recall and precision</title>']
-for v in range(0,101,20):
-  x=W0+v*sc; d.append('<line x1="%d" y1="20" x2="%d" y2="196" class="s-grid"/><text x="%d" y="214" class="s-m" text-anchor="middle">%d%%</text>'%(x,x,x,v))
-for i,(n,r,p,us) in enumerate(mt):
-  y=30+i*58
-  d.append('<text x="%d" y="%d" class="s-t" text-anchor="end">%s</text>'%(W0-12,y+20,esc(n)))
-  d.append('<rect x="%d" y="%d" width="%d" height="20" class="%s"/>'%(W0,y,r*sc,"s-bar-us" if us else "s-bar"))
-  d.append('<text x="%d" y="%d" class="s-num">recall %d%%</text>'%(W0+r*sc+6,y+15,r))
-  d.append('<rect x="%d" y="%d" width="%d" height="12" class="s-bar2"/>'%(W0,y+25,p*sc))
-  d.append('<text x="%d" y="%d" class="s-m">precision %d%%</text>'%(W0+p*sc+6,y+35,p))
-d.append('</svg>'); maleval="".join(d)
+mt = [("Cupella", 65, 70, True), ("MobSF 4.5.3", 19, 60, False), ("Quark-Engine 26.9.1", 26, 56, False)]
+maleval = bar_chart("mv-t", "MalEval: behavior recall (filled bar) and precision (outline)",
+  [(n, "recall %d%%, precision %d%%" % (r, p), r, p, us) for n, r, p, us in mt],
+  100, range(0, 101, 20), lambda v: "%d%%" % v)
 
 # 5. decryption effect
-e=['<svg viewBox="0 0 820 150" role="img" aria-labelledby="dc-t"><title id="dc-t">Six encrypted MalEval samples: behavior recall and precision before and after static decryption</title>']
-for v in range(0,101,20):
-  x=W0+v*sc; e.append('<line x1="%d" y1="14" x2="%d" y2="116" class="s-grid"/><text x="%d" y="134" class="s-m" text-anchor="middle">%d%%</text>'%(x,x,x,v))
-for i,(n,a,b) in enumerate([("recall",50,66),("precision",68,74)]):
-  y=22+i*48
-  e.append('<text x="%d" y="%d" class="s-t" text-anchor="end">%s</text>'%(W0-12,y+18,n))
-  e.append('<rect x="%d" y="%d" width="%d" height="14" class="s-bar"/><text x="%d" y="%d" class="s-m">before %d%%</text>'%(W0,y,a*sc,W0+a*sc+6,y+11,a))
-  e.append('<rect x="%d" y="%d" width="%d" height="14" class="s-bar-us"/><text x="%d" y="%d" class="s-num">after %d%%</text>'%(W0,y+18,b*sc,W0+b*sc+6,y+29,b))
-e.append('</svg>'); dec="".join(e)
+dec = bar_chart("dc-t", "Six encrypted MalEval samples: behavior recall and precision before (outline) and after (filled bar) static decryption",
+  [("recall", "before 50%, after 66%", 66, 50, True), ("precision", "before 68%, after 74%", 74, 68, True)],
+  100, range(0, 101, 20), lambda v: "%d%%" % v)
 here = os.path.dirname(os.path.abspath(__file__))
 page = os.path.join(here, "index.html")
 html = open(page).read()

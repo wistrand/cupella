@@ -12,7 +12,7 @@
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
     --bg: #161513;
     --fg: #ece8df;
     --muted: #a39e94;
@@ -23,10 +23,6 @@
     --good: #7cc48a;
     --code-bg: #24221e;
   }
-}
-:root[data-theme="dark"] {
-  --bg: #161513; --fg: #ece8df; --muted: #a39e94; --line: #34312c; --panel: #1f1d1a;
-  --accent: #e0a94e; --accent-soft: #3a2d17; --good: #7cc48a; --code-bg: #24221e;
 }
 
 * { box-sizing: border-box; }
@@ -101,6 +97,14 @@ figure svg { width: 100%; height: auto; display: block; }
 /* on narrow screens the drawings keep a readable size and scroll sideways */
 .fig-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .fig-scroll svg { min-width: 640px; }
+/* result charts are drawn narrow and scale to the column, no sideways scrolling */
+.fig-chart { max-width: 560px; }
+/* the hero's step labels: in the drawing on wide screens, as text below it on phones */
+.hero-steps { display: none; font-size: 14px; color: var(--muted); margin: -16px 0 24px; }
+@media (max-width: 600px) {
+  .h-lab { display: none; }
+  .hero-steps { display: block; }
+}
 figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; max-width: 760px; }
 .s-box { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
 .s-agent { fill: var(--panel); stroke: var(--accent); stroke-width: 1.8; }
