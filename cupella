@@ -1,0 +1,424 @@
+#!/usr/bin/env bash
+# Run a Cupella analysis script inside its container.
+#
+#   ./cupella setup [--workspace DIR] [--harness claude|other]
+#                                        first use: checks, image, directories, self-test
+#   ./cupella build                          build the image (downloads the pinned tools)
+#   ./cupella unpack.sh data/<name>.apk      any script in scripts/, with its arguments
+#   ./cupella scan.sh <name> [scope ...]
+#   ./cupella native-disasm.py work/<name>/raw/lib/arm64-v8a/libfoo.so --jni
+#   ./cupella versions                       tool versions in the image
+#   ./cupella shell                          interactive shell in the container (no network)
+#   ./cupella sync                           in a workspace: refresh its doc copies now
+#   ./cupella gate [baseline]                benchmark gate for rule changes (host/gate.sh;
+#                                        always on the checkout's benchmark data)
+#   ./cupella help                           this list and the scripts you can run
+#
+# Paths are relative to the repo root, as in the examples. The container sees
+# scripts/ and data/ read-only, work/ and cache/ read-write, and nothing else of
+# the host. It runs as the calling user with no capabilities and a read-only root.
+#
+# Flutter apps: unpack.sh is followed automatically by flutter-decompile.sh, and
+# flutter-decompile.sh builds blutter for the app's Dart version when cache/ has no
+# build for it (several minutes, once per Dart version).
+#
+# Network is off except for two steps:
+#   reference-check.py   public registries, fixed allow-list in the script
+#   blutter-build.sh     fetches Dart runtime sources from GitHub and compiles. This
+#                        container gets scripts/ and cache/ only: no data/, no work/.
+#                        Its single input is a version string, validated here.
+#
+# Local model (optional): model-leads.py, and any script run as `./cupella --llav <script>`,
+# can query a llav server running on the host, as http://host.docker.internal:8080
+# (LLAV_URL in the container). That container is on an internal Docker network
+# (cupella-llav): it reaches the host and nothing beyond it. The llav server must
+# listen on that network's gateway address or on 0.0.0.0; 127.0.0.1 is not reachable
+# from a container. LLAV_PORT on the host selects another port.
+# A remote llav server instead: set LLAV_URL (and LLAV_API_KEY_FILE for a bearer
+# token) on the host. That container then has normal network access, and the text of
+# the selected functions goes to that server.
+# In a script: `import llav_client` (scripts/llav_client.py).
+set -euo pipefail
+
+# root: the Cupella checkout (scripts, Dockerfile, cache, benchmark metadata), found through
+# symlinks; ws: the workspace with data/, work/, and reports/ (the checkout itself, the
+# current directory when it is a workspace made by `./cupella setup --workspace`, or
+# $CUPELLA_WORKSPACE)
+root=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+if [ -n "${CUPELLA_WORKSPACE:-}" ]; then ws=$(cd "$CUPELLA_WORKSPACE" && pwd)
+elif [ -f "$PWD/.cupella-workspace" ]; then ws=$PWD
+else ws=$root; fi
+docker=${CUPELLA_DOCKER:-docker}
+image=${CUPELLA_IMAGE:-cupella:latest}
+
+# help: the command block of this header, then the runnable scripts (each script's own
+# usage is in its header comment)
+cupella_help() {
+  echo "Cupella: static analysis of Android APKs, where scripts unpack and scan each sample in an"
+  echo "offline container and a coding agent reads the code behind the leads and writes a cited report."
+  sed -n '3,/^#$/p' "$root/cupella" | sed '$d; s/^# \{0,1\}//'
+  echo
+  echo "Scripts (./cupella <script> [args]; usage in each script's header):"
+  (cd "$root/scripts" && ls -1 -- *.sh *.py 2> /dev/null | grep -v -E '^(units|dex|elf|android_perms|llav_client)\.py$' \
+    | column -c "${COLUMNS:-100}" 2> /dev/null || ls -1 -- *.sh *.py)
+  echo "  fixtures/zipslip-test.sh  fixtures/injection-test.sh  fixtures/elf-headers-test.sh"
+  echo
+  echo "Workflow and the full command list: AGENTS.md, agent_docs/reference.md"
+}
+if [ $# -eq 0 ]; then cupella_help >&2; exit 1; fi
+cmd=$1
+shift
+case "$cmd" in
+  help | -h | --help) cupella_help; exit 0 ;;
+esac
+
+if [ "$cmd" = "build" ]; then
+  exec "$docker" build -t "$image" "$@" "$root"
+fi
+
+# Claude Code agent types from the harness-neutral roles (roles/*.md): the role header
+# says what the agent may read, write, and run; the body becomes the agent's rules
+claude_agents() { # <dest .claude/agents dir>
+  mkdir -p "$1"
+  python3 - "$root/roles" "$1" <<'PY'
+import os, sys
+src, dest = sys.argv[1], sys.argv[2]
+for fn in sorted(os.listdir(src)):
+  if not fn.endswith(".md") or fn == "README.md":
+    continue
+  head, body = open(os.path.join(src, fn)).read().split("---", 2)[1:]
+  h = dict(l.split(":", 1) for l in head.strip().splitlines() if ":" in l)
+  h = {k.strip(): v.strip() for k, v in h.items()}
+  tools = ["Read", "Grep", "Glob"] + (["Write"] if h.get("write", "no") != "no" else []) + \
+          (["Bash"] if h.get("shell", "none") != "none" else [])
+  with open(os.path.join(dest, h["claude-agent"] + ".md"), "w") as f:
+    f.write("---\nname: %s\ndescription: %s\ntools: %s\n---\n" % (h["claude-agent"], h["description"], ", ".join(tools)))
+    f.write("<!-- generated by ./cupella setup from roles/%s; edit the role, not this file -->\n\n" % fn)
+    if h.get("shell", "none") not in ("none", ""):
+      f.write("Your shell may run exactly: %s.\n\n" % h["shell"])
+    f.write(body.lstrip("\n"))
+PY
+  touch "$1/.generated"
+}
+
+# A workspace gets read-only copies of what agents read (AGENTS.md, agent_docs/, prompts/,
+# roles/), so every path in the docs works there as written and nothing else of the
+# checkout (its data/, work/, reports/, bench-sources/) is reachable through the workspace.
+# The marker .cupella-workspace records the checkout, the harness, and a stamp of the
+# copied files; every ./cupella run refreshes the copies when the stamp changes.
+ws_copied=(AGENTS.md agent_docs prompts roles)
+ws_stamp() {
+  (cd "$root" && find "${ws_copied[@]}" .claude/settings.json cupella -type f -print0 \
+    | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+}
+ws_sync() { # <workspace dir> [force]
+  local w=$1 stamp harness lock p
+  [ -n "$w" ] && [ -f "$w/.cupella-workspace" ] && [ "$w" != "$root" ] || return 0
+  stamp=$(ws_stamp)
+  [ "${2:-}" != force ] && [ "$(sed -n 's/^stamp=//p' "$w/.cupella-workspace")" = "$stamp" ] && return 0
+  harness=$(sed -n 's/^harness=//p' "$w/.cupella-workspace")
+  # workspaces made before the marker held anything: Claude Code if it has agent types
+  [ -n "$harness" ] || { [ -d "$w/.claude/agents" ] && harness=claude || harness=other; }
+  # one refresh at a time; a lock left by a killed run expires after 5 minutes
+  lock="$w/.cupella-sync.lock"
+  find "$lock" -maxdepth 0 -mmin +5 -exec rmdir {} \; 2> /dev/null || true
+  mkdir "$lock" 2> /dev/null || { [ "${2:-}" = force ] && return 1; return 0; }
+  (
+    set -e
+    for p in "${ws_copied[@]}" WORKSPACE.md; do
+      if [ -e "$w/$p" ] || [ -L "$w/$p" ]; then chmod -R u+w "$w/$p" 2> /dev/null || true; rm -rf "${w:?}/$p"; fi
+    done
+    for p in "${ws_copied[@]}"; do cp -R "$root/$p" "$w/$p"; done
+    cat > "$w/WORKSPACE.md" <<'WSDOC'
+# This directory is a Cupella workspace
+
+Generated by `cupella setup` and refreshed by `./cupella` when the checkout changes;
+edits here are overwritten.
+
+- `data/`, `work/`, `reports/`, and `proposals/` are this workspace's own.
+- `AGENTS.md`, `agent_docs/`, `prompts/`, and `roles/` are read-only copies of the Cupella
+  checkout's. Paths in them work here as written. Scripts are not copied: they run only
+  through `./cupella`, which runs the checkout named in `.cupella-workspace` with this
+  workspace's directories. `./cupella sync` refreshes the copies at once.
+- Never edit scripts or docs from here, and never read files in the checkout directly:
+  its `data/`, `work/`, and `reports/` belong to other analyses.
+- A script addition or a gotcha found during an analysis goes to
+  `proposals/<YYYY-MM-DD>.md`: what, why, the sample and command that showed it, and the
+  proposed change. The user applies it in the checkout, where `./cupella gate` runs.
+- Benchmarks and `./cupella gate` run in the checkout, not here.
+- Claude Code: `.claude/settings.json`, `.claude/agents/`, and `CLAUDE.md` are generated
+  too; put your own permission rules in `.claude/settings.local.json`.
+WSDOC
+    chmod -R a-w "${ws_copied[@]/#/$w/}" "$w/WORKSPACE.md"
+    if [ "$harness" = claude ]; then
+      claude_agents "$w/.claude/agents"
+      cp "$root/.claude/settings.json" "$w/.claude/settings.json"
+      printf '@AGENTS.md\n@WORKSPACE.md\n' > "$w/CLAUDE.md"
+    fi
+    # workspaces from before: the link to the whole checkout goes
+    if [ -L "$w/tool" ]; then rm "$w/tool"; fi
+    mkdir -p "$w/proposals"
+    printf 'checkout=%s\nharness=%s\nstamp=%s\n' "$root" "$harness" "$stamp" > "$w/.cupella-workspace"
+  ) && echo "== workspace docs refreshed from $root" >&2
+  local rc=$?
+  rmdir "$lock" 2> /dev/null || true
+  return $rc
+}
+
+# first use: check Docker and disk, build the image if missing, make the directories (or
+# a separate workspace), and prove the sandbox with the extraction and injection checks
+if [ "$cmd" = "setup" ]; then
+  target=""
+  harness=$(command -v claude > /dev/null 2>&1 && echo claude || echo other)
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --workspace) target=${2:?usage: ./cupella setup [--workspace DIR] [--harness claude|other]}; shift 2 ;;
+      --harness) harness=${2:?usage: ./cupella setup [--workspace DIR] [--harness claude|other]}; shift 2 ;;
+      *) echo "usage: ./cupella setup [--workspace DIR] [--harness claude|other]" >&2; exit 1 ;;
+    esac
+  done
+  "$docker" info > /dev/null 2>&1 || { echo "Docker is not usable by this user ($docker info failed)" >&2; exit 1; }
+  free=$(df -Pk "$root" | awk 'NR==2 {print int($4 / 1048576)}')
+  [ "$free" -ge 20 ] || echo "warning: ${free} GB free under $root; the image needs about 6 GB, each large APK several GB in work/"
+  if ! "$docker" image inspect "$image" > /dev/null 2>&1; then
+    echo "== building the image (downloads pinned tools; takes a while, once)"
+    "$0" build || exit 1
+  fi
+  [ "$harness" = claude ] && claude_agents "$root/.claude/agents"
+  if [ -n "$target" ]; then
+    # a workspace: its own data/, work/, reports/, proposals/; read-only copies of the
+    # agent-facing docs; a ./cupella wrapper that finds this checkout through the marker
+    mkdir -p "$target"/{data,work,reports,proposals}
+    target=$(cd "$target" && pwd)
+    [ "$target" != "$root" ] || { echo "the workspace cannot be the checkout itself" >&2; exit 1; }
+    printf 'checkout=%s\nharness=%s\nstamp=\n' "$root" "$harness" > "$target/.cupella-workspace"
+    cat > "$target/cupella" <<'WRAP'
+#!/bin/sh
+# generated by cupella setup: runs the Cupella checkout named in .cupella-workspace with
+# this workspace's data/, work/, reports/
+d=$(cd "$(dirname "$0")" && pwd)
+c=$(sed -n 's/^checkout=//p' "$d/.cupella-workspace")
+if [ ! -x "$c/cupella" ]; then
+  echo "Cupella checkout not found at '$c'. If it moved, run: <checkout>/cupella setup --workspace $d" >&2
+  exit 1
+fi
+export CUPELLA_WORKSPACE="$d"
+exec "$c/cupella" "$@"
+WRAP
+    chmod +x "$target/cupella"
+    # for a workspace kept in git: track reports/ and proposals/, never the samples, the
+    # script output, or what ./cupella generates. Written once; yours to edit.
+    [ -e "$target/.gitignore" ] || cat > "$target/.gitignore" <<'GI'
+# written by cupella setup once; yours to edit (setup and sync never overwrite it)
+# samples (may be live malware) and script output (large, regenerable)
+/data/
+/work/
+# generated and refreshed from the checkout by ./cupella
+/AGENTS.md
+/WORKSPACE.md
+/CLAUDE.md
+/agent_docs/
+/prompts/
+/roles/
+/cupella
+/.cupella-workspace
+/.cupella-sync.lock/
+/.claude/settings.json
+/.claude/agents/
+# personal
+/.claude/settings.local.json
+/.claude/*.log
+GI
+    ws_sync "$target"
+    echo "== workspace $target (start your coding agent there; data/, work/, reports/ stay there)"
+    cd "$target"
+  else
+    mkdir -p "$ws/data" "$ws/work" "$ws/reports"
+  fi
+  echo "== self-test: extraction stays inside the sample, decompression limits, injection scan"
+  out=$("$0" fixtures/zipslip-test.sh 2>&1; "$0" fixtures/injection-test.sh 2>&1)
+  bad=$(grep -v '^  ' <<< "$out" | grep -v 'unzip is not used' | grep -c 'FAIL' || true)
+  grep -v '^  ' <<< "$out" | grep -v 'unzip is not used'
+  [ "$bad" = 0 ] || { echo "self-test: $bad failures; do not analyze samples until fixed" >&2; exit 1; }
+  echo "== ready. Put APKs in ${target:-$ws}/data/, start your coding agent in ${target:-$ws} (it reads AGENTS.md), and ask it to analyze one."
+  echo "   Benchmarks (optional, in the checkout): ./bench-setup"
+  exit 0
+fi
+
+# `./cupella sync` in a workspace: refresh the copies now, even when the checkout is unchanged
+if [ "$cmd" = sync ]; then
+  [ "$ws" != "$root" ] && [ -f "$ws/.cupella-workspace" ] \
+    || { echo "sync runs in a workspace (made by ./cupella setup --workspace DIR)" >&2; exit 1; }
+  ws_sync "$ws" force || { echo "sync failed (another refresh running? retry)" >&2; exit 1; }
+  echo "== workspace $ws: docs, roles, and generated files refreshed from $root"
+  exit 0
+fi
+# a workspace run: refresh its copies of the docs, and say which workspace is used
+if [ "$ws" != "$root" ]; then
+  if [ -f "$ws/.cupella-workspace" ]; then
+    c=$(sed -n 's/^checkout=//p' "$ws/.cupella-workspace")
+    [ -z "$c" ] || [ "$c" = "$root" ] \
+      || echo "note: this workspace was set up for the checkout $c; running $root" >&2
+    ws_sync "$ws" || echo "warning: could not refresh the workspace's copies of the docs" >&2
+  fi
+  echo "== workspace: $ws" >&2
+fi
+if [ -n "${CUPELLA_WORKSPACE:-}" ] && [ "$PWD" != "$ws" ] \
+   && { [ -f "$PWD/.cupella-workspace" ] || [ "$PWD" = "$root" ]; }; then
+  echo "warning: CUPELLA_WORKSPACE=$CUPELLA_WORKSPACE overrides the current directory $PWD" >&2
+fi
+
+"$docker" image inspect "$image" > /dev/null 2>&1 \
+  || { echo "image $image not found: ask the user to run ./cupella setup (or ./cupella build)" >&2; exit 1; }
+# Claude Code agent types are generated from roles/: say when they are older than a role
+if [ -d "$ws/.claude/agents" ] && { [ ! -f "$ws/.claude/agents/.generated" ] \
+     || [ -n "$(find "$root/roles" -name '*.md' -newer "$ws/.claude/agents/.generated" 2>/dev/null | head -1)" ]; }; then
+  echo "note: roles/ changed since the Claude agent types were generated; refresh with: ./cupella setup$([ "$ws" != "$root" ] && echo ' --workspace .')" >&2
+fi
+
+mkdir -p "$ws/work" "$ws/data" "$ws/reports" "$root/cache"
+
+common=(--rm
+  --user "$(id -u):$(id -g)"
+  --cap-drop ALL
+  --security-opt no-new-privileges
+  --read-only
+  --tmpfs /tmp:exec,mode=1777,size=6g
+  # resource limits against hostile input (decompression bombs, parser hangs that
+  # allocate or spawn without end): memory, process count, and the size of any one
+  # file written (work/ is on the host disk); override with APK_MEMORY, APK_FSIZE
+  --memory "${APK_MEMORY:-12g}"
+  --memory-swap "${APK_MEMORY:-12g}"
+  --pids-limit 4096
+  --ulimit "fsize=${APK_FSIZE:-4294967296}"
+  -v "$root/scripts:/repo/scripts:ro"
+  -w /repo)
+# cache/ holds blutter builds that later analyses execute: read-only wherever APK data
+# is mounted, so no sample can plant code there; only builder() writes it
+analysis=(-v "$ws/data:/repo/data:ro" -v "$ws/work:/repo/work" -v "$root/cache:/cache:ro")
+
+# offline, with the APK data: every analysis step
+offline() { "$docker" run "${common[@]}" --network none "${analysis[@]}" "$@"; }
+# networked, with the APK data: reference lookups only
+online() { "$docker" run "${common[@]}" --network bridge "${analysis[@]}" "$@"; }
+# networked, without data/ and work/: tool builds
+builder() { "$docker" run "${common[@]}" --network bridge -v "$root/cache:/cache" "$@"; }
+
+# Dart analysis for a Flutter app: find the Dart version offline, build blutter for
+# it in the isolated networked container if the cache has none, then run offline.
+dart_decompile() {
+  local name=$1 ver rc=0
+  ver=$(offline "$image" scripts/flutter-decompile.sh --need "$name") || rc=$?
+  if [ "$rc" = 3 ]; then
+    [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.+-]*$ ]] \
+      || { echo "refusing to build: '$ver' is not a Dart version" >&2; return 1; }
+    echo "== no blutter build for Dart $ver in cache/: building (network, several minutes, once per Dart version)"
+    builder "$image" scripts/blutter-build.sh "$ver" || { echo "blutter build failed" >&2; return 1; }
+  elif [ "$rc" != 0 ]; then
+    return "$rc"
+  fi
+  offline "$image" scripts/flutter-decompile.sh "$name"
+}
+
+# no internet, but the host is reachable as host.docker.internal, for the llav model
+# server. The network is internal: no route out, only to the host's address on it.
+with_llav() {
+  local net=cupella-llav gw port=${LLAV_PORT:-8080}
+  if [ -n "${LLAV_URL:-}" ]; then
+    [[ "$LLAV_URL" =~ ^https?://[A-Za-z0-9.:-]+(/[A-Za-z0-9._/-]*)?$ ]] \
+      || { echo "LLAV_URL is not a plain http(s) URL: $LLAV_URL" >&2; return 1; }
+    echo "== remote llav at $LLAV_URL: this container has network access" >&2
+    LLAV_API_KEY=$([ -n "${LLAV_API_KEY_FILE:-}" ] && cat "$LLAV_API_KEY_FILE" || true) \
+      "$docker" run "${common[@]}" --network bridge "${analysis[@]}" \
+      -e "LLAV_URL=$LLAV_URL" -e LLAV_API_KEY "$@"
+    return
+  fi
+  "$docker" network inspect "$net" > /dev/null 2>&1 \
+    || "$docker" network create --internal "$net" > /dev/null
+  gw=$("$docker" network inspect "$net" --format '{{(index .IPAM.Config 0).Gateway}}')
+  if ! (exec 3<> "/dev/tcp/$gw/$port") 2> /dev/null; then
+    echo "no llav server reachable at $gw:$port (the container's host.docker.internal)." >&2
+    echo "A server bound to 127.0.0.1 is not reachable from a container: start llav with --host $gw (or 0.0.0.0)." >&2
+    return 1
+  fi
+  "$docker" run "${common[@]}" --network "$net" --add-host "host.docker.internal:$gw" \
+    "${analysis[@]}" -e "LLAV_URL=http://host.docker.internal:$port" "$@"
+}
+
+# `./cupella --llav <script> [args]` runs any script that way.
+use_llav=0
+if [ "$cmd" = "--llav" ]; then
+  use_llav=1
+  cmd=${1:?usage: ./cupella --llav <script> [args...]}
+  shift
+fi
+
+case "$cmd" in
+  gate)
+    # host-side: rescans and measures through ./cupella, on the checkout's data/ and bench/
+    [ "$ws" = "$root" ] || echo "== gate runs on the checkout's benchmark data ($root), not this workspace" >&2
+    exec env -u CUPELLA_WORKSPACE "$root/host/gate.sh" "$@" ;;
+  versions) offline "$image" cat /opt/tools/VERSIONS; exit ;;
+  shell)    exec "$docker" run -it "${common[@]}" --network none "${analysis[@]}" "$image" bash ;;
+esac
+
+[ -f "$root/scripts/$cmd" ] || { echo "no such script: scripts/$cmd" >&2; exit 1; }
+
+case "$cmd" in
+  mobsf-scan.py)
+    # MobSF, for the benchmark comparison only: its official image, pinned by digest
+    # (v4.5.3), offline and with the same limits as the analysis image. The user pulls
+    # it once; this script never downloads it.
+    mobsf_image=${MOBSF_IMAGE:-opensecurity/mobile-security-framework-mobsf@sha256:5113fbad0727445dda01afdccafea5e107bfa8632ead8a169492f5caa8aa1b7c}
+    "$docker" image inspect "$mobsf_image" > /dev/null 2>&1 \
+      || { echo "MobSF image not present: ask the user to run: docker pull $mobsf_image" >&2; exit 1; }
+    # MobSF downloads jadx on first use; offline it gets ours (pinned in the image), copied
+    # once into cache/ by a container that has neither network nor APK data
+    if [ ! -x "$root/cache/mobsf-jadx/bin/jadx" ]; then
+      "$docker" run "${common[@]}" --network none -v "$root/cache:/cache" "$image" \
+        sh -c 'rm -rf /cache/mobsf-jadx && cp -r /opt/tools/jadx /cache/mobsf-jadx' \
+        || { echo "could not copy jadx for MobSF" >&2; exit 1; }
+    fi
+    exec "$docker" run "${common[@]}" --network none "${analysis[@]}" -e HOME=/tmp/home \
+      --entrypoint python3 "$mobsf_image" "scripts/$cmd" "$@" ;;
+  model-leads.py)
+    with_llav "$image" "scripts/$cmd" "$@" ;;
+  reference-check.py)
+    online "$image" "scripts/$cmd" "$@" ;;
+  run-decryptor.sh)
+    # phase 1: lint and run the agent-written decryptor with this sample's directories
+    # read-only and only its decrypt/ writable; phase 2: unpack the outputs as usual
+    n=${1:?usage: ./cupella run-decryptor.sh <name>}
+    [[ "$n" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "bad sample name: $n" >&2; exit 1; }
+    [ -d "$ws/work/$n/decrypt" ] || { echo "no work/$n/decrypt/" >&2; exit 1; }
+    mounts=(-v "$ws/work/$n:/repo/work/$n:ro" -v "$ws/work/$n/decrypt:/repo/work/$n/decrypt")
+    for d in "$ws/work/$n".emb* "$ws/work/$n".dec*; do
+      [ -d "$d" ] && mounts+=(-v "$d:/repo/work/$(basename "$d"):ro")
+    done
+    "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-decryptor.sh --exec "$n" \
+      && offline "$image" scripts/run-decryptor.sh --unpack "$n" ;;
+  lead-eval.py | cite-check.py)
+    offline -v "$ws/reports:/repo/reports:ro" "$image" "scripts/$cmd" "$@" ;;
+  bench-*.py)
+    mkdir -p "$root/bench"
+    offline -v "$root/bench:/repo/bench:ro" "$image" "scripts/$cmd" "$@" ;;
+  blutter-build.sh)
+    builder "$image" "scripts/$cmd" "$@" ;;
+  flutter-decompile.sh)
+    dart_decompile "${1:?usage: ./cupella flutter-decompile.sh <name>}" ;;
+  unpack.sh)
+    offline "$image" "scripts/$cmd" "$@"
+    # a Flutter app's logic is in libapp.so: continue with the Dart step
+    for a in "$@"; do apk=$a; done
+    name=$(basename "$apk" .apk)
+    if [ -f "$ws/work/$name/raw/lib/arm64-v8a/libapp.so" ] && [ ! -d "$ws/work/$name/dart/asm" ]; then
+      echo "== Flutter app: running the Dart analysis (./cupella flutter-decompile.sh $name)"
+      dart_decompile "$name" || echo "== Dart analysis did not complete; the rest of the unpack output is usable"
+    fi ;;
+  *)
+    if [ "$use_llav" = 1 ]; then
+      with_llav "$image" "scripts/$cmd" "$@"
+    else
+      offline "$image" "scripts/$cmd" "$@"
+    fi ;;
+esac

@@ -1,0 +1,11 @@
+/work/
+/cache/
+/bench/
+/data/
+/reports/
+__pycache__/
+/.claude/*.log
+/.claude/settings.local.json
+# generated from roles/ by ./cupella setup
+/.claude/agents/
+/.idea/

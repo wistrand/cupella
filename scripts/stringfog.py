@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Decode strings hidden by calls with constant arguments (StringFog and similar).
+
+Many apps, malware in particular, replace each string literal with a call such as
+decode("aj5A\\n", "B00nCJSjg9M=\\n") to a static (String, String) -> String method. This
+finds such methods in the bytecode (called from MIN_CALLS or more places with two
+const-string arguments), tries the common schemes on their arguments, and keeps a scheme
+only when nearly all results are readable text:
+
+  b64-xor   Base64-decode both, XOR the data with the key repeated (StringFog default)
+  xor       XOR the characters of the first with the second, repeated
+
+Nothing from the app is executed: the scheme is reimplemented here and checked by the
+plausibility of its output. A method no scheme decodes is listed for the decryption
+stage (agent). Results: work/<name>/string-map.tsv (the format annotate-strings.py
+reads) and, through annotate-strings.py, work/<name>/jadx-strings/.
+
+Usage: ./cupella stringfog.py <name>
+Output: stdout (summary lines for scan.txt)
+"""
+import base64
+import glob
+import os
+import struct
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dex  # noqa: E402
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+MIN_CALLS = 20
+ACCEPT = 0.9
+SIG = "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"
+
+
+def readable(t):
+  if not t:
+    return True
+  good = sum(1 for c in t if c.isprintable() or c in "\n\t\r")
+  return good >= 0.9 * len(t)
+
+
+def b64(s):
+  return base64.b64decode(s.strip() + "=" * (-len(s.strip()) % 4), validate=False)
+
+
+def scheme_b64_xor(s, k):
+  d, key = b64(s), b64(k)
+  if not key:
+    raise ValueError("empty key")
+  return bytes(c ^ key[i % len(key)] for i, c in enumerate(d)).decode("utf-8")
+
+
+def scheme_xor(s, k):
+  if not k:
+    raise ValueError("empty key")
+  return "".join(chr(ord(c) ^ ord(k[i % len(k)])) for i, c in enumerate(s))
+
+
+SCHEMES = [("b64-xor", scheme_b64_xor), ("xor", scheme_xor)]
+
+
+def calls(d, buf):
+  """{method_key: [(arg1, arg2), ...]} for static (String,String)String calls with constant args"""
+  out = {}
+  for _cls, data, _s, _i in d.classes():
+    for _idx, code in d.methods_of(data):
+      if not code:
+        continue
+      try:
+        (n,) = struct.unpack_from("<I", buf, code + 12)
+        base, pc, regs = code + 16, 0, {}
+        while pc < n:
+          unit = struct.unpack_from("<H", buf, base + 2 * pc)[0]
+          op = unit & 0xFF
+          if op == 0 and unit in (0x0100, 0x0200, 0x0300):
+            if unit == 0x0100:
+              pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 2 + 4
+            elif unit == 0x0200:
+              pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 4 + 2
+            else:
+              w, sz = struct.unpack_from("<HI", buf, base + 2 * pc + 2)
+              pc += (sz * w + 1) // 2 + 4
+            continue
+          if op == 0x1a:
+            regs[unit >> 8] = d.string(struct.unpack_from("<H", buf, base + 2 * pc + 2)[0])
+          elif op == 0x1b:
+            regs[unit >> 8] = d.string(struct.unpack_from("<I", buf, base + 2 * pc + 2)[0])
+          elif op == 0x71 and unit >> 12 == 2:  # invoke-static with two arguments
+            midx, rr = struct.unpack_from("<HH", buf, base + 2 * pc + 2)
+            key = d.method(midx)[4]
+            if key.endswith(SIG):
+              a, b = rr & 0xF, (rr >> 4) & 0xF
+              if a in regs and b in regs:
+                out.setdefault(key, []).append((regs[a], regs[b]))
+          elif op in (0x0a, 0x0b, 0x0c) and (unit >> 8) in regs:
+            regs.pop(unit >> 8, None)  # move-result overwrites the register
+          pc += dex.WIDTH[op]
+      except (struct.error, IndexError, ValueError):
+        continue
+  return out
+
+
+def tsv(t):
+  return t.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
+
+
+def main():
+  if len(sys.argv) != 2:
+    sys.exit(__doc__)
+  name = sys.argv[1]
+  work = os.path.join(ROOT, "work", name)
+  sites = {}
+  for p in sorted(glob.glob(os.path.join(work, "raw", "classes*.dex"))):
+    buf = open(p, "rb").read()
+    try:
+      d = dex.Dex(buf)
+      if buf[:4] != b"dex\n":
+        continue
+      for k, v in calls(d, buf).items():
+        sites.setdefault(k, []).extend(v)
+    except (struct.error, IndexError, ValueError):
+      continue
+  cands = {k: v for k, v in sites.items() if len(v) >= MIN_CALLS}
+  print("\n## Encrypted strings decoded by script (stringfog.py; plaintext in jadx-strings/)")
+  if not cands:
+    print("(no decoder-like methods: no static (String,String)String method with %d+ constant-argument calls)" % MIN_CALLS)
+    return
+  rows, undecoded = {}, []
+  for key, pairs in sorted(cands.items(), key=lambda kv: -len(kv[1])):
+    uniq = sorted(set(pairs))
+    best = None
+    for sname, fn in SCHEMES:
+      out, ok = {}, 0
+      for s, k in uniq:
+        try:
+          t = fn(s, k)
+        except (ValueError, UnicodeDecodeError):
+          continue
+        if readable(t):
+          ok += 1
+          out[(s, k)] = t
+      if ok >= ACCEPT * len(uniq) and (best is None or ok > best[1]):
+        best = (sname, ok, out)
+    if best:
+      rows.update(best[2])
+      print("- %s: %d calls, %d distinct, scheme %s decoded %d" % (key, len(pairs), len(uniq), best[0], best[1]))
+    else:
+      undecoded.append(key)
+      print("- %s: %d calls, no scheme gives readable text: a lead for the decryption stage" % (key, len(pairs)))
+  if rows:
+    mp = os.path.join(work, "string-map.tsv")
+    with open(mp, "w") as f:
+      for (s, k), t in sorted(rows.items()):
+        f.write("%s\t%s\t%s\n" % (tsv(s), tsv(k), tsv(t)))
+    import re
+    import subprocess
+    maps = []
+    m = re.match(r"(.+)\.(?:dec|emb)\d+$", name)  # the decryption stage's map of the parent comes first
+    if m and os.path.isfile(os.path.join(ROOT, "work", m.group(1), "decrypt", "out", "string-map.tsv")):
+      maps.append(os.path.join("work", m.group(1), "decrypt", "out", "string-map.tsv"))
+    maps.append(os.path.relpath(mp, ROOT))
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "annotate-strings.py"), name] + maps,
+                       capture_output=True, text=True)
+    print((r.stdout or r.stderr).strip())
+
+
+if __name__ == "__main__":
+  main()

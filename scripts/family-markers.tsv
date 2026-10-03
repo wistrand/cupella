@@ -1,0 +1,12 @@
+# Published markers of malware families. Columns (tab-separated):
+#   family  kind  pattern  min  source
+# kind regex:    pattern is a regular expression matched against the sample's strings
+# kind strings:  pattern is a comma-separated set of exact strings (command names, keys);
+#                the row matches when at least `min` of them occur as whole strings
+# Every row cites the public report it comes from. Add rows only from such reports, never
+# from one sample's analysis alone. A match is a lead to a family, not an attribution.
+BTMOB	regex	/yaarsa/private/yarsap_	1	https://cyble.com/blog/btmob-rat-newly-discovered-android-malware/ (2025-02-12, C2 path)
+BTMOB	regex	\bBT-v[0-9]+\.[0-9]+	1	https://cyble.com/blog/btmob-rat-newly-discovered-android-malware/ (2025-02-12, version string)
+BTMOB	strings	optns,fetch,brows,lock,ject,file,clip,chat,wrk,srh,mic,add,bc,upload,screen,scread	12	https://cyble.com/blog/btmob-rat-newly-discovered-android-malware/ (2025-02-12, 16 commands)
+MiningDropper	regex	virusscanbypassbootstrapper	1	https://cyble.com/blog/miningdropper-global-modular-android-malware/ (2026-04-15, loader class)
+MiningDropper	regex	librequisitionerastomous\.so	1	https://cyble.com/blog/miningdropper-global-modular-android-malware/ (2026-04-15, native library)

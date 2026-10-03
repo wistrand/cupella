@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./cupella:*)"
+    ],
+    "deny": [
+      "Bash(adb:*)",
+      "Bash(readelf:*)",
+      "Bash(objdump:*)",
+      "Bash(strings:*)",
+      "Bash(cstool:*)",
+      "Bash(unzip:*)",
+      "Bash(file:*)",
+      "Bash(jadx:*)",
+      "Bash(apktool:*)"
+    ]
+  }
+}

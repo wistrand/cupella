@@ -1,0 +1,5 @@
+# deliberately vulnerable apps: GitHub repo, release tag, asset, saved as, sha256
+dineshshetty/Android-InsecureBankv2	2.3.1	InsecureBankv2.apk	InsecureBankv2.apk	b18af2a0e44d7634bbcdf93664d9c78a2695e050393fcfbb5e8b91f902d194a4
+oversecured/ovaa	1.0.0	app-debug.apk	ovaa.apk	073d87a2bcbfcd539146854681d4968960dbee0209673b17cdbe1aaed6705233
+hax0rgb/InsecureShop	v1.0	InsecureShop.apk	InsecureShop.apk	a83298ae4a37fcab8101e8b41e513dd2199af71a94ea537d556a318e07d4d1bd
+satishpatnayak/AndroGoat	v2.0.1	AndroGoat.apk	AndroGoat.apk	3e6f6b538b82874dd94c0d8cdadd69ba54d49b59d2c7eb055073892e8a4fc0e0

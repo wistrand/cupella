@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Download the benchmark datasets into data/ and bench/, verified against the hashes in
+# bench-sources/. Optional: needed for ./cupella gate and the benchmarks, not for analyzing APKs.
+#
+#   ./bench-setup [--yes] [ghera] [maleval] [vulnapps]     default: all three
+#
+# MalEval holds live malware (230 samples). It is stored as files only; nothing here or
+# in the analysis ever runs it. Without --yes the script asks before fetching it.
+# Sources: Ghera from Bitbucket secure-it-i/android-app-vulnerability-benchmarks (raw files,
+# checked against bench-sources/ghera.tsv); MalEval from Hugging Face Xinzxr/MalEval at a
+# pinned revision (checked against its SHA256SUMS); the vulnerable apps from their GitHub
+# releases (checked against bench-sources/vulnapps.tsv), with each project's README at the
+# same release tag; the scoring agent takes the authors' vulnerability list from it.
+set -euo pipefail
+root=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+cd "$root"
+yes=0
+sets=()
+for a in "$@"; do
+  case $a in
+    --yes) yes=1 ;;
+    ghera|maleval|vulnapps) sets+=("$a") ;;
+    *) sed -n '2,13p' "$0"; exit 1 ;;
+  esac
+done
+[ ${#sets[@]} -gt 0 ] || sets=(ghera maleval vulnapps)
+command -v curl > /dev/null || { echo "curl is required" >&2; exit 1; }
+sha() { sha256sum < "$1" | cut -d' ' -f1; }
+
+ghera() {
+  echo "== Ghera (120 APKs, 60 READMEs)"
+  local B=https://bitbucket.org/secure-it-i/android-app-vulnerability-benchmarks/raw/master bad=0 p h f
+  mkdir -p data/ghera bench/ghera
+  while IFS=$'\t' read -r p h; do
+    [[ $p == \#* ]] && continue
+    f=data/ghera/$(basename "$p")
+    if [ ! -f "$f" ] || [ "$(sha "$f")" != "$h" ]; then
+      curl -sSfL -m 300 -o "$f.tmp" "$B/$p" && [ "$(sha "$f.tmp")" = "$h" ] && mv "$f.tmp" "$f" \
+        || { rm -f "$f.tmp"; echo "FAIL $p"; bad=$((bad + 1)); }
+    fi
+    # the README of each pair sits two levels above its APKs
+    local pair readme
+    pair=$(basename "$(dirname "$(dirname "$p")")")
+    readme=bench/ghera/$pair.README.md
+    [ -s "$readme" ] || curl -sSfL -m 60 -o "$readme" "$B/$(dirname "$(dirname "$p")")/README.md" || echo "FAIL README $pair"
+  done < bench-sources/ghera.tsv
+  echo "Ghera: $(ls data/ghera/*.apk | wc -l) APKs, $(ls bench/ghera/*.README.md | wc -l) READMEs, $bad failures"
+}
+
+maleval() {
+  if [ "$yes" != 1 ]; then
+    read -r -p "MalEval contains 230 live malware APKs (stored, never run). Download about 2 GB? [y/N] " ok
+    [ "$ok" = y ] || { echo "MalEval skipped"; return; }
+  fi
+  echo "== MalEval"
+  local R=https://huggingface.co/datasets/Xinzxr/MalEval/resolve/a5bd8d81116d2936a3edcd7eae5b26403aabdbd4 f
+  mkdir -p bench/maleval/info data/maleval
+  ( cd bench/maleval
+    curl -sSfL -o SHA256SUMS "$R/SHA256SUMS"
+    for f in reports.zip meta_info.zip entrypoints.zip apk.zip; do
+      [ -s "$f" ] && grep " $f\$" SHA256SUMS | sha256sum -c --status 2>/dev/null && continue
+      curl -sSfL -m 3600 -o "$f" "$R/$f"
+    done
+    for f in info/archived_sample_info.json info/benign_sample_info.json info/latest_sample_info.json; do
+      curl -sSfL -o "$f" "$R/$f"
+    done
+    grep -E ' (reports|meta_info|entrypoints|apk)\.zip$' SHA256SUMS | sha256sum -c )
+  # archives to their places; entries are checked to stay inside the target, and each APK
+  # must be named after its own sha256
+  python3 - <<'PY'
+import hashlib, os, zipfile
+def extract(zpath, dest, prefix=""):
+  with zipfile.ZipFile(zpath) as z:
+    for i in z.infolist():
+      if i.is_dir() or not i.filename.startswith(prefix):
+        continue
+      rel = i.filename[len(prefix):]
+      out = os.path.realpath(os.path.join(dest, rel))
+      if not out.startswith(os.path.realpath(dest) + os.sep):
+        raise SystemExit("unsafe entry %s" % i.filename)
+      os.makedirs(os.path.dirname(out), exist_ok=True)
+      with z.open(i) as s, open(out, "wb") as d:
+        d.write(s.read())
+extract("bench/maleval/apk.zip", "data/maleval", "apk/")
+extract("bench/maleval/reports.zip", "bench/maleval")
+bad = 0
+for sp in ("benign", "malradar", "new"):
+  d = os.path.join("data/maleval", sp)
+  for f in os.listdir(d) if os.path.isdir(d) else []:
+    if hashlib.sha256(open(os.path.join(d, f), "rb").read()).hexdigest() != f[:-4]:
+      bad += 1
+print("MalEval: %d APKs, %d hash mismatches" % (sum(len(os.listdir(os.path.join("data/maleval", s))) for s in ("benign", "malradar", "new") if os.path.isdir(os.path.join("data/maleval", s))), bad))
+PY
+}
+
+vulnapps() {
+  echo "== deliberately vulnerable apps"
+  local repo tag asset name h f bad=0
+  mkdir -p data/vulnapps bench/vulnapps
+  while IFS=$'\t' read -r repo tag asset name h; do
+    [[ $repo == \#* ]] && continue
+    f=data/vulnapps/$name
+    if [ ! -f "$f" ] || [ "$(sha "$f")" != "$h" ]; then
+      curl -sSfL -m 300 -o "$f.tmp" "https://github.com/$repo/releases/download/$tag/$asset" \
+        && [ "$(sha "$f.tmp")" = "$h" ] && mv "$f.tmp" "$f" || { rm -f "$f.tmp"; echo "FAIL $repo $tag"; bad=$((bad + 1)); }
+    fi
+    curl -sSfL -m 60 -o "bench/vulnapps/${name%.apk}.README.md" "https://raw.githubusercontent.com/$repo/$tag/README.md" \
+      || { echo "FAIL README $repo $tag"; bad=$((bad + 1)); }
+  done < bench-sources/vulnapps.tsv
+  echo "vulnerable apps: $(ls data/vulnapps/*.apk | wc -l) APKs, READMEs in bench/vulnapps/, $bad failures"
+}
+
+for s in "${sets[@]}"; do "$s"; done
+echo "next: unpack and scan them (agent_docs/benchmarks.md, Rerunning), then ./cupella gate baseline"

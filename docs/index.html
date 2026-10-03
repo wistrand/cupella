@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cupella</title>
+<meta name="description" content="Static analysis of Android apps with a coding agent: scripts unpack and scan in an offline container, the agent reads the code and writes a report with a file and line for each claim.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cstyle%3E.o%7Bfill:%23f3e6cf%3Bstroke:%238a5a12%7D.i%7Bfill:%238a5a12%3Bopacity:.3%7D.c%7Bfill:%23f2efe8%3Bstroke:%235f5b54%7D.h%7Bfill:%23f3e6cf%3Bstroke:%235f5b54%7D.g%7Bfill:%238a5a12%7D%40media (prefers-color-scheme:dark)%7B.o%7Bfill:%233a2d17%3Bstroke:%23e0a94e%7D.i%7Bfill:%23e0a94e%7D.c%7Bfill:%231f1d1a%3Bstroke:%23a39e94%7D.h%7Bfill:%233a2d17%3Bstroke:%23a39e94%7D.g%7Bfill:%23e0a94e%7D%7D%3C/style%3E%3Cg transform='translate(16 0.5) scale(.235) translate(-295 -50)'%3E%3Cpath class='o' stroke-width='7' stroke-linejoin='round' d='M295,50 C320,84 354,104 352,140 C350,165 327,176 295,176 C263,176 240,165 238,140 C236,112 258,98 268,72 C276,92 283,98 286,104 C290,86 292,68 295,50 Z'/%3E%3Cpath class='i' d='M297,92 C310,114 330,128 328,150 C326,167 312,176 295,176 C278,176 264,167 262,150 C261,134 274,124 280,110 C285,118 289,120 290,122 C293,112 295,102 297,92 Z'/%3E%3C/g%3E%3Cpath class='c' stroke-width='1.6' d='M4.5 31 L7 22.5 H25 L27.5 31 Z'/%3E%3Cpath class='h' stroke-width='1.6' d='M9 22.5 Q16 30 23 22.5 Z'/%3E%3Ccircle class='g' cx='16' cy='24.6' r='2.6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">cupel<span>la</span></a>
+    <nav>
+      <a href="#when">When to use</a>
+      <a href="#how">How it works</a>
+      <a href="#results">Results</a>
+      <a href="#safety">Safety</a>
+      <a href="#start">Setup</a>
+      <a href="#limits">Limits</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<div class="hero">
+  <h1>Cupella</h1>
+  <p class="lead">Static analysis of Android apps with a coding agent. Scripts unpack and scan the APK in an offline container. The agent reads the code behind the leads and writes a report. Each claim in it cites a file and line.</p>
+  <figure class="hero-fig"><svg viewBox="0 -46 760 290" role="img" aria-labelledby="hero-t"><title id="hero-t">What Cupella does: the APK goes into a loop between scripts in an offline container and the agent, which reads the leads and sends new runs back; a step no script covers is added to the scripts, so the next APK gets it; the report cites a file and line for each claim</title><defs><marker id="hah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="s-arrowhead"/></marker><marker id="haha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="s-arrowhead-a"/></marker></defs><rect x="20" y="40" width="140" height="150" rx="10" class="s-box"/><rect x="36" y="58" width="48" height="9" rx="2" class="h-ore"/><rect x="36" y="74" width="70" height="9" rx="2" class="h-ore"/><rect x="36" y="90" width="56" height="9" rx="2" class="h-ore"/><rect x="110" y="62" width="28" height="22" rx="3" class="h-ore"/><path d="M115,62 v-6 a9,9 0 0 1 18,0 v6" class="h-stroke"/><polygon points="74,135 67,147 53,147 46,135 53,123 67,123" class="h-stroke"/><text x="60" y="139" class="h-mono" text-anchor="middle">.so</text><rect x="98" y="124" width="12" height="12" rx="2" class="h-ore" transform="rotate(12 104 130)"/><rect x="118" y="140" width="12" height="12" rx="2" class="h-ore" transform="rotate(-18 124 146)"/><rect x="104" y="158" width="12" height="12" rx="2" class="h-ore" transform="rotate(8 110 164)"/><rect x="130" y="118" width="12" height="12" rx="2" class="h-ore" transform="rotate(25 136 124)"/><text x="90" y="214" class="h-t" text-anchor="middle">app.apk</text><text x="90" y="234" class="h-m" text-anchor="middle">code, libraries, assets</text><polyline points="166,112 242,112" class="s-line" marker-end="url(#hah)"/><path d="M323,55 A80,80 0 0 1 437,55" class="s-line" marker-end="url(#hah)"/><text x="380" y="52" class="h-m" text-anchor="middle">leads</text><path d="M437,169 A80,80 0 0 1 323,169" class="s-accent-line" stroke-dasharray="5 4" marker-end="url(#haha)"/><text x="380" y="182" class="h-accent-t" text-anchor="middle">re-runs</text><path d="M472,61 C472,-22 288,-22 288,56" class="s-accent-line" stroke-dasharray="5 4" marker-end="url(#haha)"/><text x="380" y="-26" class="h-accent-t" text-anchor="middle">a missing step becomes a script</text><text x="380" y="-8" class="h-m" text-anchor="middle">so the next APK gets it</text><circle cx="300" cy="112" r="54" class="h-node"/><g transform="translate(300 114) scale(.6) translate(-295 -113)"><path d="M295,50 C320,84 354,104 352,140 C350,165 327,176 295,176 C263,176 240,165 238,140 C236,112 258,98 268,72 C276,92 283,98 286,104 C290,86 292,68 295,50 Z" class="h-flame-out"/><path d="M297,92 C310,114 330,128 328,150 C326,167 312,176 295,176 C278,176 264,167 262,150 C261,134 274,124 280,110 C285,118 289,120 290,122 C293,112 295,102 297,92 Z" class="h-flame-in"/><line x1="224" y1="176" x2="366" y2="176" class="s-line"/><rect x="270" y="92" width="10" height="10" rx="2" class="h-ore" transform="rotate(20 275 97)"/><rect x="292" y="80" width="10" height="10" rx="2" class="h-ore" transform="rotate(-15 297 85)"/><rect x="314" y="100" width="10" height="10" rx="2" class="h-ore" transform="rotate(35 319 105)"/><path d="M248,176 L255,150 H335 L342,176 Z" class="h-cupel"/><path d="M265,150 Q295,174 325,150 Z" class="h-hollow"/><circle cx="295" cy="156" r="5.5" class="h-gold"/></g><text x="300" y="214" class="h-t" text-anchor="middle">unpack, scan</text><text x="300" y="234" class="h-m" text-anchor="middle">offline container</text><circle cx="460" cy="112" r="54" class="h-node-a"/><g transform="translate(460 112) scale(.7) translate(-492 -112)"><circle cx="454" cy="62" r="4.5" class="h-dot"/><circle cx="454" cy="82" r="4.5" class="h-dot"/><circle cx="454" cy="102" r="4.5" class="h-dot"/><circle cx="454" cy="122" r="4.5" class="h-dot"/><circle cx="454" cy="142" r="4.5" class="h-dot"/><circle cx="454" cy="162" r="4.5" class="h-dot"/><circle cx="472" cy="62" r="4.5" class="h-dot"/><circle cx="472" cy="82" r="4.5" class="h-dot"/><circle cx="472" cy="102" r="4.5" class="h-dot"/><circle cx="472" cy="122" r="4.5" class="h-dot"/><circle cx="472" cy="142" r="4.5" class="h-dot"/><circle cx="472" cy="162" r="4.5" class="h-dot"/><circle cx="490" cy="62" r="4.5" class="h-dot"/><circle cx="490" cy="82" r="4.5" class="h-dot"/><circle cx="490" cy="102" r="4.5" class="h-ore"/><circle cx="490" cy="122" r="4.5" class="h-gold"/><circle cx="490" cy="142" r="4.5" class="h-dot"/><circle cx="490" cy="162" r="4.5" class="h-dot"/><circle cx="508" cy="62" r="4.5" class="h-dot"/><circle cx="508" cy="82" r="4.5" class="h-dot"/><circle cx="508" cy="102" r="4.5" class="h-gold"/><circle cx="508" cy="122" r="4.5" class="h-ore"/><circle cx="508" cy="142" r="4.5" class="h-dot"/><circle cx="508" cy="162" r="4.5" class="h-dot"/><circle cx="498" cy="118" r="27" class="h-lens"/><line x1="518" y1="138" x2="534" y2="156" class="h-handle"/></g><text x="460" y="214" class="h-t" text-anchor="middle">agent investigates</text><text x="460" y="234" class="h-m" text-anchor="middle">traces and decrypts</text><polyline points="518,112 592,112" class="s-accent-line" marker-end="url(#haha)"/><text x="555" y="102" class="h-accent-t" text-anchor="middle">findings</text><path d="M600,34 h104 l26,26 v140 h-130 z" class="s-box"/><path d="M704,34 v26 h26" class="s-line"/><rect x="614" y="50" width="62" height="9" rx="2" class="h-ink"/><circle cx="618" cy="78" r="4" class="h-gold"/><rect x="628" y="75" width="58" height="7" rx="2" class="h-ore"/><rect x="692" y="73" width="22" height="11" rx="3" class="h-cite"/><circle cx="618" cy="97" r="4" class="h-gold"/><rect x="628" y="94" width="46" height="7" rx="2" class="h-ore"/><rect x="680" y="92" width="22" height="11" rx="3" class="h-cite"/><circle cx="618" cy="116" r="4" class="h-gold"/><rect x="628" y="113" width="62" height="7" rx="2" class="h-ore"/><rect x="696" y="111" width="22" height="11" rx="3" class="h-cite"/><circle cx="618" cy="135" r="4" class="h-gold"/><rect x="628" y="132" width="40" height="7" rx="2" class="h-ore"/><rect x="674" y="130" width="22" height="11" rx="3" class="h-cite"/><circle cx="618" cy="154" r="4" class="h-gold"/><rect x="628" y="151" width="54" height="7" rx="2" class="h-ore"/><rect x="688" y="149" width="22" height="11" rx="3" class="h-cite"/><circle cx="618" cy="173" r="4" class="h-gold"/><rect x="628" y="170" width="50" height="7" rx="2" class="h-ore"/><rect x="684" y="168" width="22" height="11" rx="3" class="h-cite"/><text x="665" y="214" class="h-t" text-anchor="middle">reports/app.md</text><text x="665" y="234" class="h-m" text-anchor="middle">each claim cites file:line</text></svg></figure>
+  <p class="note">Named after the cupel, the dish a fire assay uses to separate precious metal from the rest.</p>
+</div>
+
+<section id="what">
+  <h2>Output</h2>
+  <p>One markdown report per APK: identity and signing, permissions and what uses them, components, network, data handling, native code, findings, indicators, open questions. Every finding cites a path and line under <code>work/</code>.</p>
+  <p>Before a report counts as done, a script checks that every citation exists, and a second agent tries to refute each claim against the code. On the latest BTMOB report that second pass found 1 wrong and 6 overstated claims out of 47; they were fixed before the report was final.</p>
+  <p>Features whose permission the manifest does not request, or whose native library the APK does not ship, are listed as present but inert. The scan flags both cases.</p>
+</section>
+
+<section id="when">
+  <h2>When to use it</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Use Cupella for</h3>
+      <ul class="plain">
+        <li>Finding out what one malware sample does, with a file and line behind each claim and a list of indicators.</li>
+        <li>Packed or obfuscated apps: string encryption, encrypted payloads in assets, native decryption layers. They are decrypted statically.</li>
+        <li>A security review of one app, where each finding has to be checked against the code and features behind a missing permission are reported as inert.</li>
+        <li>Comparing two versions of an app and reading the code behind each change.</li>
+        <li>Building up the method: when a step is missing, the agent adds it to a script, so the next APK gets it.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Use something else for</h3>
+      <ul class="plain">
+        <li>Scanning many apps, or a gate in CI: rule-based scanners such as MobSF and Quark-Engine take seconds per app without a model. Cupella takes minutes and many thousands of tokens per app.</li>
+        <li>A quick malicious-or-not verdict: Cupella describes behavior and gives no verdict of its own.</li>
+        <li>Behavior that only shows at run time: keys made at run time, code or configuration fetched from a server. That needs dynamic analysis.</li>
+        <li>Code you may not send to a hosted model: the agent reads excerpts of the decompiled code.</li>
+        <li>iOS or other formats: only the Android front end exists.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <h2>How it works</h2>
+<figure><div class="fig-scroll"><svg viewBox="0 0 820 430" role="img" aria-labelledby="flow-t"><title id="flow-t">Cupella flow: the agent on the host, scripts in an offline container</title><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="s-arrowhead"/></marker><marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="s-arrowhead-a"/></marker></defs><rect x="8" y="8" width="804" height="140" rx="10" class="s-zone"/><text x="22" y="28" class="s-z">HOST</text><rect x="30" y="40" width="230" height="72" rx="8" class="s-agent"/><text x="145" y="72" class="s-t" text-anchor="middle">Coding agent</text><text x="145" y="90" class="s-m" text-anchor="middle">reads leads, writes the report</text><rect x="295" y="40" width="210" height="72" rx="8" class="s-box"/><text x="400" y="72" class="s-t" text-anchor="middle">AGENTS.md, roles, prompts</text><text x="400" y="90" class="s-m" text-anchor="middle">instructions and subagent rules</text><rect x="545" y="40" width="245" height="72" rx="8" class="s-box"/><text x="667" y="72" class="s-t" text-anchor="middle">reports/app.md</text><text x="667" y="90" class="s-m" text-anchor="middle">cite-check, verifier agent</text><polyline points="292,76 263,76" class="s-line" marker-end="url(#ah)"/><polyline points="145,40 145,20 667,20 667,37" class="s-accent-line" marker-end="url(#aha)"/><text x="406" y="34" class="s-m" text-anchor="middle">writes</text><polyline points="110,112 110,176 328,176" class="s-line" marker-end="url(#ah)"/><rect x="330" y="158" width="160" height="38" rx="8" class="s-box"/><text x="410" y="173" class="s-t" text-anchor="middle">./cupella</text><text x="410" y="191" class="s-m" text-anchor="middle">the only way in</text><polyline points="410,196 410,226" class="s-line" marker-end="url(#ah)"/><polyline points="700,250 700,126 200,126 200,115" class="s-accent-line" marker-end="url(#aha)" stroke-dasharray="5 4"/><text x="450" y="141" class="s-m" text-anchor="middle">the agent reads work/, never the sample itself</text><rect x="8" y="212" width="804" height="210" rx="10" class="s-zone"/><text x="22" y="232" class="s-z">CONTAINER: NO NETWORK, READ-ONLY ROOT, LIMITS</text><rect x="26" y="250" width="140" height="62" rx="8" class="s-box"/><text x="96" y="277" class="s-t" text-anchor="middle">data/app.apk</text><text x="96" y="295" class="s-m" text-anchor="middle">read-only</text><rect x="196" y="250" width="170" height="62" rx="8" class="s-box"/><text x="281" y="277" class="s-t" text-anchor="middle">unpack.sh</text><text x="281" y="295" class="s-m" text-anchor="middle">extract, decompile</text><rect x="396" y="250" width="170" height="62" rx="8" class="s-box"/><text x="481" y="277" class="s-t" text-anchor="middle">scan.sh</text><text x="481" y="295" class="s-m" text-anchor="middle">leads, decoded strings</text><rect x="596" y="250" width="196" height="62" rx="8" class="s-box"/><text x="694" y="277" class="s-t" text-anchor="middle">work/app/</text><text x="694" y="295" class="s-m" text-anchor="middle">triage, leads, code</text><polyline points="166,281 193,281" class="s-line" marker-end="url(#ah)"/><polyline points="366,281 393,281" class="s-line" marker-end="url(#ah)"/><polyline points="566,281 593,281" class="s-line" marker-end="url(#ah)"/><rect x="396" y="344" width="220" height="62" rx="8" class="s-box"/><text x="506" y="371" class="s-t" text-anchor="middle">decryptor</text><text x="506" y="389" class="s-m" text-anchor="middle">agent-written decrypt.py, linted</text><polyline points="396,375 281,375 281,315" class="s-accent-line" marker-end="url(#aha)"/><text x="292" y="368" class="s-m" text-anchor="start">decrypted payloads</text></svg></div><figcaption>The agent never touches a sample. Every parse goes through <code>./cupella</code> into the container; the agent reads what the scripts wrote to <code>work/</code>. Decrypted payloads go back through the same pipeline as samples of their own.</figcaption></figure>
+<pre><code>data/app.apk
+  ./cupella unpack.sh    extract (size limits, no symlinks), apktool, jadx, manifest,
+                     signatures, native and Flutter summaries, embedded payloads
+  ./cupella scan.sh      decoded strings, pattern sections, call-graph and data-flow
+                     leads, missing permissions and libraries, family markers
+  agent              reads the code behind the leads
+  decryptor agent    if code is encrypted: writes decrypt.py, linted, run locked
+                     down; decrypted payloads are unpacked and scanned as samples
+  agent              writes reports/app.md; cite-check and a verifier agent check it</code></pre>
+
+  <h3>Anti-analysis</h3>
+  <p>Handled so far, each reported as a finding:</p>
+  <ul class="plain">
+    <li>ZIP tricks: fake encryption flags, entries that shadow real files, path tricks, symlink entries, decompression bombs.</li>
+    <li>Junk bytes after each method that stop jadx and baksmali. A control-flow disassembler reads past them.</li>
+    <li>Manifests padded with hundreds of invented permissions.</li>
+    <li>String encryption at every call site. Common schemes decode automatically; the plaintext is written next to each call.</li>
+    <li>Payloads encrypted in assets, in several layers. A BTMOB dropper had five; all were decrypted with keys found in the APK.</li>
+    <li>R8 moving app code into a package that looks like a library.</li>
+    <li>Native libraries without section headers, and direct system calls.</li>
+  </ul>
+<figure><div class="fig-scroll"><svg viewBox="0 0 820 320" role="img" aria-labelledby="lay-t"><title id="lay-t">The five layers of the BTMOB dropper, decrypted from the outside in</title><rect x="10" y="10" width="800" height="300" rx="10" class="s-layer"/><text x="24" y="30" class="s-t">outer APK, posing as a carrier update</text><text x="317" y="30" class="s-m">packer stub; junk bytecode stops jadx and baksmali</text><rect x="34" y="40" width="752" height="256" rx="10" class="s-layer"/><text x="48" y="60" class="s-t">layer 1: AES asset</text><text x="196" y="60" class="s-m">dropper dex</text><rect x="58" y="70" width="704" height="212" rx="10" class="s-layer"/><text x="72" y="90" class="s-t">layer 2: XOR asset, key from native library</text><text x="410" y="90" class="s-m">split APK of the second app</text><rect x="82" y="100" width="656" height="168" rx="10" class="s-layer"/><text x="96" y="120" class="s-t">layer 3: AES asset</text><text x="244" y="120" class="s-m">three dex files with the app code</text><rect x="106" y="130" width="608" height="124" rx="10" class="s-layer"/><text x="120" y="150" class="s-t">layer 4: string encryption</text><text x="329" y="150" class="s-m">5,032 strings decoded</text><rect x="130" y="160" width="560" height="80" rx="10" class="s-layer-fill"/><text x="144" y="180" class="s-t">layer 5: AES configuration</text><text x="353" y="180" class="s-m">C2 host, overlay pages</text><text x="410" y="216" class="s-t" text-anchor="middle">what the app does: remote control, SMS, overlays, keylogging</text></svg></div><figcaption>The BTMOB dropper (a mobile-carrier update lure, 2026). Each layer was decrypted statically by an agent-written decryptor, with keys from the APK or its native library.</figcaption></figure>
+</section>
+
+<section id="results">
+  <h2>Results</h2>
+  <p>Public benchmarks, static only, scored blind by a separate model. MobSF and Quark-Engine ran on the same apps and were scored the same way. The three tools do different jobs: MobSF reports weaknesses and permissions, Quark-Engine matches rules for malicious behavior and answers in about 2 seconds without a model, and Cupella is an agent that reads the code over minutes.</p>
+<figure><div class="fig-scroll"><svg viewBox="0 0 820 230" role="img" aria-labelledby="gh-t"><title id="gh-t">Ghera: vulnerabilities found of 59, and fixed apps flagged; Quark-Engine not applicable</title><line x1="170" y1="20" x2="170" y2="196" class="s-grid"/><text x="170" y="214" class="s-m" text-anchor="middle">0</text><line x1="271" y1="20" x2="271" y2="196" class="s-grid"/><text x="271" y="214" class="s-m" text-anchor="middle">10</text><line x1="373" y1="20" x2="373" y2="196" class="s-grid"/><text x="373" y="214" class="s-m" text-anchor="middle">20</text><line x1="475" y1="20" x2="475" y2="196" class="s-grid"/><text x="475" y="214" class="s-m" text-anchor="middle">30</text><line x1="576" y1="20" x2="576" y2="196" class="s-grid"/><text x="576" y="214" class="s-m" text-anchor="middle">40</text><line x1="678" y1="20" x2="678" y2="196" class="s-grid"/><text x="678" y="214" class="s-m" text-anchor="middle">50</text><line x1="770" y1="20" x2="770" y2="196" class="s-grid"/><text x="770" y="214" class="s-m" text-anchor="middle">59</text><text x="158" y="50" class="s-t" text-anchor="end">Cupella</text><rect x="170" y="30" width="559" height="20" class="s-bar-us"/><text x="735" y="45" class="s-num">55 found</text><rect x="170" y="55" width="61" height="12" class="s-bar2"/><text x="237" y="65" class="s-m">6 also in the fixed app</text><text x="158" y="108" class="s-t" text-anchor="end">MobSF 4.5.3</text><rect x="170" y="88" width="203" height="20" class="s-bar"/><text x="379" y="103" class="s-num">20 found</text><rect x="170" y="113" width="61" height="12" class="s-bar2"/><text x="237" y="123" class="s-m">6 also in the fixed app</text><text x="158" y="166" class="s-t" text-anchor="end">Quark-Engine 26.9.1</text><text x="176" y="161" class="s-m">not applicable: a malware-behavior engine with no vulnerability rules</text></svg></div><figcaption>Ghera: 59 apps, each with a known vulnerability, and a fixed version of each. A finding also reported in the fixed app is a false alarm.</figcaption></figure>
+<figure><div class="fig-scroll"><svg viewBox="0 0 820 230" role="img" aria-labelledby="mv-t"><title id="mv-t">MalEval: behavior recall and precision</title><line x1="170" y1="20" x2="170" y2="196" class="s-grid"/><text x="170" y="214" class="s-m" text-anchor="middle">0%</text><line x1="290" y1="20" x2="290" y2="196" class="s-grid"/><text x="290" y="214" class="s-m" text-anchor="middle">20%</text><line x1="410" y1="20" x2="410" y2="196" class="s-grid"/><text x="410" y="214" class="s-m" text-anchor="middle">40%</text><line x1="530" y1="20" x2="530" y2="196" class="s-grid"/><text x="530" y="214" class="s-m" text-anchor="middle">60%</text><line x1="650" y1="20" x2="650" y2="196" class="s-grid"/><text x="650" y="214" class="s-m" text-anchor="middle">80%</text><line x1="770" y1="20" x2="770" y2="196" class="s-grid"/><text x="770" y="214" class="s-m" text-anchor="middle">100%</text><text x="158" y="50" class="s-t" text-anchor="end">Cupella</text><rect x="170" y="30" width="390" height="20" class="s-bar-us"/><text x="566" y="45" class="s-num">recall 65%</text><rect x="170" y="55" width="420" height="12" class="s-bar2"/><text x="596" y="65" class="s-m">precision 70%</text><text x="158" y="108" class="s-t" text-anchor="end">MobSF 4.5.3</text><rect x="170" y="88" width="114" height="20" class="s-bar"/><text x="290" y="103" class="s-num">recall 19%</text><rect x="170" y="113" width="360" height="12" class="s-bar2"/><text x="536" y="123" class="s-m">precision 60%</text><text x="158" y="166" class="s-t" text-anchor="end">Quark-Engine 26.9.1</text><rect x="170" y="146" width="156" height="20" class="s-bar"/><text x="332" y="161" class="s-num">recall 26%</text><rect x="170" y="171" width="336" height="12" class="s-bar2"/><text x="512" y="181" class="s-m">precision 56%</text></svg></div><figcaption>MalEval slice: 20 malware and 5 benign apps; how many of the labeled behaviors each tool named (recall), and how many of its claims matched a label (precision).</figcaption></figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th></th><th>Ghera: found (of 59)</th><th>also in fixed app</th><th>MalEval: malware flagged</th><th>benign right</th><th>behavior recall</th><th>precision</th></tr></thead>
+    <tbody>
+      <tr class="us"><td>Cupella</td><td class="num">55</td><td class="num">6</td><td class="num">19 of 20</td><td class="num">5 of 5</td><td class="num">65%</td><td class="num">70%</td></tr>
+      <tr><td>MobSF 4.5.3</td><td class="num">20</td><td class="num">6</td><td class="num">18 of 20</td><td class="num">5 of 5</td><td class="num">19%</td><td class="num">60%</td></tr>
+      <tr><td>Quark-Engine 26.9.1</td><td class="num">n/a</td><td class="num">n/a</td><td class="num">18 of 20</td><td class="num">4 of 5</td><td class="num">26%</td><td class="num">56%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Deliberately vulnerable apps (InsecureBankv2, OVAA, InsecureShop, AndroGoat): 85 of 89 listed vulnerabilities found. MalEval samples with encrypted code: behavior recall 50% before decryption, 66% after.</p>
+  <figure><div class="fig-scroll"><svg viewBox="0 0 820 150" role="img" aria-labelledby="dc-t"><title id="dc-t">Six encrypted MalEval samples: behavior recall and precision before and after static decryption</title><line x1="170" y1="14" x2="170" y2="116" class="s-grid"/><text x="170" y="134" class="s-m" text-anchor="middle">0%</text><line x1="290" y1="14" x2="290" y2="116" class="s-grid"/><text x="290" y="134" class="s-m" text-anchor="middle">20%</text><line x1="410" y1="14" x2="410" y2="116" class="s-grid"/><text x="410" y="134" class="s-m" text-anchor="middle">40%</text><line x1="530" y1="14" x2="530" y2="116" class="s-grid"/><text x="530" y="134" class="s-m" text-anchor="middle">60%</text><line x1="650" y1="14" x2="650" y2="116" class="s-grid"/><text x="650" y="134" class="s-m" text-anchor="middle">80%</text><line x1="770" y1="14" x2="770" y2="116" class="s-grid"/><text x="770" y="134" class="s-m" text-anchor="middle">100%</text><text x="158" y="40" class="s-t" text-anchor="end">recall</text><rect x="170" y="22" width="300" height="14" class="s-bar"/><text x="476" y="33" class="s-m">before 50%</text><rect x="170" y="40" width="396" height="14" class="s-bar-us"/><text x="572" y="51" class="s-num">after 66%</text><text x="158" y="88" class="s-t" text-anchor="end">precision</text><rect x="170" y="70" width="408" height="14" class="s-bar"/><text x="584" y="81" class="s-m">before 68%</text><rect x="170" y="88" width="444" height="14" class="s-bar-us"/><text x="620" y="99" class="s-num">after 74%</text></svg></div><figcaption>The six MalEval samples whose code or strings were encrypted, before and after the decryption stage.</figcaption></figure>
+  <p>Quark-Engine was also tested as a lead source for Cupella. Its matches restricted to an app's own code fired on none of the 5 benign apps, and they pointed at 5 functions the agent cited that Cupella's own leads missed. Wiring them into the scan is open.</p>
+  <p class="small">Caveats: Quark-Engine has rules for malware behavior and none for vulnerabilities, so it was not scored on Ghera (n/a). On MalEval it crashed on 2 of the 25 samples, whose ZIP entries are marked encrypted to break tools, and those count as nothing found. Mapped to behavior classes, its reports named no remote control, banking, ransom, ads, or privilege escalation, though its rule matches did point at code behind some of these (the lead-source test above). The tools' MalEval output was mapped to behavior classes by a model. The MalEval slice is 25 samples. The vulnerable apps are well known, so a model may partly remember them. The scanners take seconds per app; Cupella takes minutes and many thousands of tokens.</p>
+</section>
+
+<section id="safety">
+  <h2>Safety</h2>
+  <ul class="plain">
+    <li>Samples are parsed only in a container with no network, no capabilities and a read-only root, under memory, process, file-size and time limits.</li>
+    <li>Extraction refuses entries that would land outside the sample's directory, symlink entries and decompression bombs. <code>./cupella setup</code> tests this before first use.</li>
+    <li>Agent-written decryptors are linted (no exec, no network, no subprocess except <code>openssl</code>) and run with only their output directory writable.</li>
+    <li>Subagents that read sample-derived text get no shell, or only listed commands, where the harness can enforce it.</li>
+    <li>Text in a sample that addresses the agent goes into the report as a finding. Names and addresses from a sample are never contacted.</li>
+  </ul>
+</section>
+
+<section id="start">
+  <h2>Setup</h2>
+  <p>Requires Docker and a coding agent that reads <code>AGENTS.md</code> and runs shell commands.</p>
+<pre><code>git clone &lt;repository&gt; cupella &amp;&amp; cd cupella
+./cupella setup                  # checks Docker, builds the image once, self-test
+cp ~/Downloads/some.apk data/
+claude                       # or another coding agent, started here</code></pre>
+  <p>Then ask it to analyze <code>data/some.apk</code>. A separate workspace keeps cases out of the checkout:</p>
+<pre><code>./cupella setup --workspace ~/cases/acme   # own data/, work/, reports/; read-only copies of the docs
+cd ~/cases/acme</code></pre>
+  <h3>Harnesses</h3>
+  <p>Instructions are in <code>AGENTS.md</code>, subagent roles in <code>roles/</code>. Claude Code gets generated agent types and permission rules, and has run all analyses and benchmarks so far. Codex CLI has run analyses in a workspace; Gemini CLI and Cursor have setup notes and are untested.</p>
+  <h3>Benchmarks</h3>
+  <p><code>./bench-setup</code> fetches Ghera, MalEval and the vulnerable apps and checks them against recorded hashes. It asks before downloading MalEval, which is live malware. <code>./cupella gate</code> compares 94 metrics before and after a script change and fails if any gets worse.</p>
+</section>
+
+<section id="limits">
+  <h2>Limits</h2>
+  <ul class="plain">
+    <li>Static only: keys made at run time, code fetched from a server and server-side configuration are out of reach.</li>
+    <li>Minutes per app, more for packed malware. Too slow for a CI gate.</li>
+    <li>Results vary between runs: two rounds on Ghera differed by about one pair.</li>
+    <li>Android only. A new format needs its own front end and benchmark.</li>
+    <li>Prompt injection: sample text is scanned for instructions aimed at the agent and treated as data. A new trick can still get through.</li>
+    <li>A safety classifier has stopped a subagent partway through reading malware.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">Cupella · static analysis of Android apps · Apache License 2.0</div>
+</footer>
+
+</body>
+</html>
