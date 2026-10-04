@@ -122,11 +122,14 @@ agent needs; proposals go to the workspace's `proposals/`, inside the sandbox, a
   | `claude-opus-4-8` (reader subagents) | final summaries of an SMS stealer's areas (2026-10-04) | 2 of 4 stopped |
   | Claude Opus 5.5 (main agent) | first write of the report on an NFC card-relay app (2026-10-04) | stopped; no file written |
   | Claude Opus 5.5 (main agent) | same sample, second session: one Edit holding eight sections (2026-10-04) | stopped; skeleton kept, edit not applied |
+  | Claude Opus 5.5 (main agent) | writing the SMS-and-calls reader prompt for a dropper's decrypted SMS stealer (2026-10-04, sample d442c8a3...) | stopped; decryption and two readers done, analysis left unfinished |
+  | Codex CLI (model not recorded) | the same sample, full analysis (reported by the user, 2026-10-04) | finished, not stopped |
 
 - When the report stage is stopped, never retry the stopped content in that session,
   reworded or through a subagent. Write the stop into `progress/main.md` and tell the
   user. The user can finish the analysis in a fresh session, with another model
-  selected if they choose (Claude Code: `/model`); that session resumes from
+  selected if they choose (Claude Code: `/model`), or in another harness: Codex CLI
+  analyzed in full the sample on which Claude Code stopped (table above); that session resumes from
   `progress/main.md` and the script output ([workflow.md](workflow.md) "Checkpoints")
   and writes the report itself. A subagent cannot take over the report anyway: Claude
   Code refuses a subagent's write to a file named like a report.
