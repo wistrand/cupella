@@ -23,8 +23,9 @@ Findings. A record:
   attack      list of MITRE ATT&CK Mobile IDs ("T1437.001"), optional
   inferred    list of statements that are inferences, optional
   author      "main" or the reader role that wrote it ("reader-c2")
-  verdict     optional, from verification: {"result": "ok"|"wrong"|"overstated",
-              "note": "...", "by": "verify"}
+  verdict     optional, from verification (claims-merge.py writes it):
+              {"result": "holds"|"overstated"|"wrong", "note": "...", "by": "verify",
+               "refs": ["<path>:<line>", ...]}
 
 Checks: the schema; every ref names an existing file and lines inside it; every quote is
 on the cited lines (whitespace ignored), else where it moved; every entry/api pair is in
@@ -40,7 +41,7 @@ import sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 STATUS = {"draft", "confirmed", "rejected"}
 CONFIDENCE = {"confirmed", "likely", "lead", "inert"}
-VERDICT = {"ok", "wrong", "overstated"}
+VERDICT = {"holds", "overstated", "wrong"}
 FIELDS = {"id", "status", "threat", "title", "claim", "evidence", "gate", "confidence", "class",
           "attack", "inferred", "author", "verdict"}
 REQUIRED = ("id", "status", "title", "claim", "evidence", "gate", "confidence")
@@ -104,6 +105,10 @@ def load(path):
       v = c.get("verdict")
       if v is not None and (not isinstance(v, dict) or v.get("result") not in VERDICT):
         problems.append("%s: verdict.result must be one of %s" % (where, ", ".join(sorted(VERDICT))))
+      elif v is not None:
+        for r in v.get("refs") or []:
+          if not REF.match(str(r)):
+            problems.append("%s: verdict ref %r is not <path>:<line>[-<line>]" % (where, r))
       claims.append(c)
   return claims, problems
 
@@ -134,6 +139,10 @@ def check_evidence(name, claims, facts):
   for c in claims:
     if c.get("status") == "rejected":
       continue
+    for r in (c.get("verdict") or {}).get("refs") or []:
+      m = REF.match(str(r))
+      if m and not resolve(name, m.group(1)):
+        problems.append("%s verdict %s: no such file" % (c.get("id"), r))
     for e in c.get("evidence") or []:
       if not isinstance(e, dict):
         continue

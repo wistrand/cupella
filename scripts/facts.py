@@ -255,7 +255,8 @@ def behavior(rep, bf):
     for lab in sorted(found, key=lambda x: (len(found[x][0]), x)):
       path, line, how = found[lab]
       entries.append(dict(u2(u), kind=kind, api=lab, at=bf.cite(path[-1][0], line), bytecode=bool(how),
-                          chain=[("%s%s" % (m, bf.short(x))) for x, m in path[1:]],
+                          # "*": a merged lambda class; the step holds only for the case its creator chose
+                          chain=[("%s%s%s" % (m, bf.short(x), "*" if bf.merged(x) else "")) for x, m in path[1:]],
                           merged=any(bf.merged(x) for x, _m in path[1:])))
   return {
     "scope": rep["scopes"], "depth": rep["depth"], "manifest": rep["manifest"],

@@ -81,6 +81,7 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `claims-check.py`             | checks `reports/<name>/claims.jsonl`: schema (documented in the script), refs, quotes against the code, entry rows in `facts.json` |
 | `report-build.py`             | builds `reports/<name>.json` (`cupella-report/1`, the report as data) from `facts.json`, `claims.jsonl`, `notes.md` (pilot), then `./cupella` runs `report-render.py`; each in a container with only its inputs and output; `--stdout [--md]` previews |
 | `report-render.py`            | renders `reports/<name>.json` as `reports/<name>.md`; reads nothing else |
+| `claims-merge.py`             | merges the verifier's `progress/verify-verdicts.jsonl` into `reports/<name>/claims.jsonl` (`verdict` per claim; keeps `claims.jsonl.prev`); container with only those two |
 
 On demand:
 
@@ -140,6 +141,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella claims-check.py <name>                  # rendered reports: claims schema, refs, quotes
 ./cupella report-build.py <name> [--replace|--stdout [--md]]   # reports/<name>.json from facts, claims, notes; then the .md
 ./cupella report-render.py <name> [--replace|--stdout]   # reports/<name>.md from the JSON alone
+./cupella claims-merge.py <name>                 # verifier verdicts into claims.jsonl
 ./cupella xref.py <name> <Class.method|FUN_...|Class::method> [--depth N]
 ./cupella callgraph-check.py <name> [scope ...]   # after changing units.py or dex.py: "lost" and functions without a dex method must be 0
 ./cupella behavior-map.py <name> <Class.method|util/Foo.java:120> [--up N] [--down N]   # Mermaid map for a finding

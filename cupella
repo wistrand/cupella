@@ -485,6 +485,16 @@ case "$cmd" in
     done
     "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-decryptor.sh --exec "$n" \
       && offline "$image" scripts/run-decryptor.sh --unpack "$n" ;;
+  claims-merge.py)
+    # verdicts (reader output) into reports/<name>/claims.jsonl: a container that sees only
+    # the verdict file and reports/<name>/, no APK data
+    n=${1:-}
+    [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. ]] || { echo "usage: ./cupella claims-merge.py <name>" >&2; exit 1; }
+    v="$ws/work/$n/progress/verify-verdicts.jsonl"
+    [ -f "$v" ] && [ ! -L "$v" ] || { echo "no work/$n/progress/verify-verdicts.jsonl" >&2; exit 1; }
+    [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/" >&2; exit 1; }
+    exec "$docker" run "${common[@]}" --network none -v "$v:/repo/work/$n/progress/verify-verdicts.jsonl:ro" \
+      -v "$ws/reports/$n:/repo/reports/$n" "$image" scripts/claims-merge.py "$n" ;;
   report-build.py | report-render.py)
     # report-build.py: reports/<name>.json from facts.json (scripts) and reports/<name>/
     # (agent), then report-render.py: reports/<name>.md from that JSON alone. Each in a

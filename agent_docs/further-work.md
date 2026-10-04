@@ -147,11 +147,11 @@ From the agent benchmarks; each is small and testable on the same samples.
 - Rendered reports (pilot since 2026-10-04, [design-report.md](design-report.md) "Rendered
   reports"): `facts.py`, `claims-check.py`, `report-build.py` (JSON), `report-render.py`
   (markdown from the JSON); one malware report
-  (08ea5fb9...) rendered, two benign apps previewed with `--stdout` (F-Droid, maid). Open:
+  (08ea5fb9...) rendered and verified (verdicts per claim through `claims-merge.py`;
+  12 holds, 2 overstated, both corrected), two benign apps previewed with `--stdout` (F-Droid, maid). Open:
   readers write draft claims (`prompts/read-area.md` still asks for a findings text file;
   the `reader` role may write only `progress/`, so drafts would go to
-  `progress/<role>-claims.jsonl` for the main agent to move); the verifier writes a
-  `verdict` per claim (`prompts/verify-report.md`); the benchmark prompts; the skeleton
+  `progress/<role>-claims.jsonl` for the main agent to move); the benchmark prompts; the skeleton
   from `unpack.sh` replaced by a render; migrating the other reports in `reports/`;
   `lead-eval.py` reading claims instead of parsing "## Findings"; `./cupella gate` and
   `./cupella check` after the `scan.sh` change; an HTML renderer from the JSON (escape every

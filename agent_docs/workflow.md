@@ -215,7 +215,9 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
   message can be stopped by a safety classifier while writing it, and the summary is
   lost ([harnesses.md](harnesses.md)).
 - Verification output is `work/<name>/verification.md`, written section by section, or
-  the agent's final message when it cannot write. Fix every "wrong" and "overstated" item after
+  the agent's final message when it cannot write. For a rendered report also
+  `work/<name>/progress/verify-verdicts.jsonl`, one verdict per claim, which
+  `./cupella claims-merge.py <name>` merges into `reports/<name>/claims.jsonl`. Fix every "wrong" and "overstated" item after
   checking it against the code yourself; the verifier can be wrong too. One data point
   for cost: verifying the Octo report took about 150k tokens and 3 minutes and found 3
   wrong and 4 overstated claims out of 25.

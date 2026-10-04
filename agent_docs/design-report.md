@@ -41,7 +41,11 @@ reports are still written by hand in the structure below. Two steps:
   `{"ref": "<path>:<line>", "quote": "<text on that line>"}` or `{"entry": "<Class.method>",
   "api": "<label>"}` (a row of the Behavior facts table). The renderer prints chain and gate.
 - `status` `draft` renders under "Not yet confirmed"; `confirmed` under its threat;
-  `rejected` not at all. Verification sets `verdict` per claim.
+  `rejected` not at all.
+- Verification (`prompts/verify-report.md`) writes `work/<name>/progress/verify-verdicts.jsonl`,
+  one verdict per claim; `./cupella claims-merge.py <name>` merges them into the claims'
+  `verdict` field (the previous file stays as `claims.jsonl.prev`). Before editing a claim
+  found `wrong` or `overstated`, check the code yourself; the verifier can be wrong too.
 - The JSON holds the facts, the findings in report order (numbered) with entry evidence
   resolved to its Behavior facts row, drafts, rejected ids, claim counts, indicators, and
   the notes as markdown per section. Use it for other tools instead of parsing the
