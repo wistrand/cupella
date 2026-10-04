@@ -24,15 +24,17 @@ unset CUPELLA_WORKSPACE
 mode=${1:-check}
 out="$root/work/_gate"
 mkdir -p "$out"
-jobs=${GATE_JOBS:-$(( $(nproc) / 2 > 1 ? $(nproc) / 2 : 1 ))}
+# portable to macOS (BSD userland, bash 3.2): no nproc, find -printf, xargs -d or -r
+cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)
+jobs=${GATE_JOBS:-$(( cpus / 2 > 1 ? cpus / 2 : 1 ))}
 
 rescan() {
   # Ghera pairs, MalEval samples (scan.sh also rescans embedded payloads), analyzed apps.
   # One pool, largest dex first, so a big report app overlaps the many small scans
   # instead of following them. A job line is "<flag> <name>": flag 1 scans with scope "."
-  ls -d work/*-Lean-benign work/*-Lean-secure 2>/dev/null | xargs -r -n1 basename > "$out/names.txt"
+  for d in work/*-Lean-benign work/*-Lean-secure; do if [ -d "$d" ]; then basename "$d"; fi; done > "$out/names.txt"
   if [ -d data/maleval ]; then
-    find data/maleval -name '*.apk' -printf '%f\n' | sed 's/\.apk$//' >> "$out/names.txt"
+    find data/maleval -name '*.apk' | sed 's#.*/##; s/\.apk$//' >> "$out/names.txt"
   fi
   for r in reports/*.md; do
     n=$(basename "$r" .md)
@@ -42,16 +44,16 @@ rescan() {
   while IFS= read -r n; do
     f=0
     grep -q '^scope: \. ' "work/$n/scan.txt" 2>/dev/null && f=1
-    size=$( { find "work/$n/raw" -maxdepth 1 -name '*.dex' -printf '%s\n' 2>/dev/null || true; } | awk '{s += $1} END {print s + 0}')
+    size=$(for x in "work/$n/raw"/*.dex; do if [ -f "$x" ]; then wc -c < "$x"; fi; done | awk '{s += $1} END {print s + 0}')
     printf '%s\t%s %s\n' "$size" "$f" "$n"
   done < "$out/names.txt" | sort -t "$(printf '\t')" -k1,1nr | cut -f2- > "$out/jobs.txt"
   rm -rf "$out/logs" "$out/done"
   mkdir -p "$out/logs"
-  total=$(wc -l < "$out/jobs.txt")
+  total=$(wc -l < "$out/jobs.txt" | tr -d ' ')
   echo "   $total samples, $jobs at a time (GATE_JOBS); progress every 50, and every scan over 30s"
   # the job line reaches sh as "$1", never as part of the script text; a failed scan's
   # output stays in work/_gate/logs/
-  OUT=$out TOTAL=$total xargs -d '\n' -P "$jobs" -n1 sh -c '
+  tr '\n' '\0' < "$out/jobs.txt" | OUT=$out TOTAL=$total xargs -0 -P "$jobs" -n1 sh -c '
     f=${1%% *}; n=${1#* }
     if [ "$f" = 1 ]; then set -- "$n" .; else set -- "$n"; fi
     log="$OUT/logs/$(printf %s "$n" | tr -c "A-Za-z0-9._-" _).txt"
@@ -63,9 +65,9 @@ rescan() {
     fi
     t=$(($(date +%s) - start))
     echo x >> "$OUT/done"
-    k=$(wc -l < "$OUT/done")
+    k=$(wc -l < "$OUT/done" | tr -d " ")
     if [ "$t" -ge 30 ] || [ $((k % 50)) = 0 ] || [ "$k" = "$TOTAL" ]; then echo "   [$k/$TOTAL] ${t}s $n"; fi
-  ' _ < "$out/jobs.txt"
+  ' _
 }
 
 measure() { # writes metric<TAB>value lines
@@ -123,7 +125,7 @@ measure
 if [ "$mode" = baseline ]; then
   mkdir -p bench
   cp "$out/metrics.txt" bench/gate-baseline.txt
-  echo "baseline stored: bench/gate-baseline.txt ($(wc -l < bench/gate-baseline.txt) metrics)"
+  echo "baseline stored: bench/gate-baseline.txt ($(wc -l < bench/gate-baseline.txt | tr -d ' ') metrics)"
   exit 0
 fi
 [ -f bench/gate-baseline.txt ] || { echo "no baseline: run ./cupella gate baseline first" >&2; exit 2; }

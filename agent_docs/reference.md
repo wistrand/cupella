@@ -206,6 +206,18 @@ only that sample's directories mounted, read-only except its `decrypt/`.
 `./cupella try-proposal` mounts the same, read-only except `work/<name>/proposals/<slug>/`,
 plus the tool's `proposals/<slug>/` read-only.
 
+Hosts: Linux (x86_64) is the main platform. macOS on Apple Silicon with Docker Desktop
+was tested on 2026-10-04: `./cupella check --no-gate`, unpack, scan, and the Capstone
+disassembler work; `flows.txt` and `native-summary.txt` matched Linux byte for byte, while
+`scan.txt` sections at the hit cap held other hits (directory order differs; `scan.sh` now
+sorts hits and takes them round-robin over files). The image builds natively for arm64;
+the Ghidra release has no arm64 decompiler, so the `Dockerfile` builds one from the
+release's sources on arm64 (its output on a test library was identical to the x86_64
+build's). The host scripts keep to bash 3.2 and BSD tools
+(macOS): no `nproc`, `find -printf`, or `xargs -d`/`-r`; `wc -l` output has its padding
+stripped; no empty array is expanded under `set -u`. The native fixture in `./cupella check` needs clang and ld.lld on the
+host (Homebrew's llvm on macOS).
+
 Everything runs with `--network none` except:
 
 - `reference-check.py`: lookups in a fixed allow-list of public registries, sending

@@ -49,7 +49,7 @@ list_ws() { # <workspace> <all 0/1>: one block per workspace
     title=$(grep -m1 -E '^#+ ' "$f" 2> /dev/null | sed -E 's/^#+ +//' | clean 70)
     [ -n "$title" ] || title=$(grep -m1 -v '^[[:space:]]*$' "$f" 2> /dev/null | clean 70)
     tool=""; [ -f "$p/$slug/tool.py" ] && tool=" [tool]"
-    runs=$(find "$w/work" -mindepth 3 -maxdepth 3 -path "*/proposals/$slug" -type d 2> /dev/null | wc -l)
+    runs=$(find "$w/work" -mindepth 3 -maxdepth 3 -path "*/proposals/$slug" -type d 2> /dev/null | wc -l | tr -d ' ')  # BSD wc pads with spaces
     [ "$runs" = 0 ] || tool="$tool [run on $runs sample(s)]"
     lines+=("$(printf '  %-8s %-34s %s%s' "$st" "$slug" "$title" "$tool")")
     [ -z "$note" ] || lines+=("$(printf '           %s %s' "$date" "$note" | clean 110)")

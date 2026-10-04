@@ -41,14 +41,24 @@ else
 fi
 max=${SCAN_MAX:-40}
 
+# grep -r lists files in directory order, which differs between file systems (a macOS
+# bind mount gave other hits under the cap than Linux): sort by path, then line, first
+ordered() { LC_ALL=C sort -t: -k1,1 -k2,2n; }
+# capped: at most $max hits, taken round-robin over files (each file's first hit, then
+# each file's second, ...) so that one file with many hits does not fill the section;
+# printed in path and line order
+capped() {
+  ordered | awk -F: '{ n[$1]++; printf "%d\t%s\n", n[$1], $0 }' | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -s \
+    | head -n "$max" | cut -f2- | ordered
+}
 scan() { # <title> <regex>
   echo
   echo "## $1"
-  (cd "$src" && grep -rn -E -e "$2" -- "${scopes[@]}" 2>/dev/null | cut -c1-240 | head -n "$max") || true
+  (cd "$src" && grep -rn -E -e "$2" -- "${scopes[@]}" 2>/dev/null | capped | cut -c1-240) || true
   # embedded payloads (unpacked by unpack.sh as work/<child>/) are searched whole: they
   # have no library split. Paths are relative to work/<name>/.
   for e in "${embedded[@]}"; do
-    (cd "$out" && grep -rn -E -e "$2" -- "../$e/jadx/sources" 2>/dev/null | cut -c1-240 | head -n "$max") || true
+    (cd "$out" && grep -rn -E -e "$2" -- "../$e/jadx/sources" 2>/dev/null | capped | cut -c1-240) || true
   done
 }
 embedded=()
@@ -120,7 +130,7 @@ string_section=$(timeout 900 python3 "$root/scripts/stringfog.py" "$name" 2>&1 |
 
   echo
   echo "## Network code anywhere in sources (libraries included; file list)"
-  (cd "$src" && grep -rl -E -e 'java\.net\.(URL|Socket|HttpURLConnection|DatagramSocket)|openConnection\(|okhttp3|javax\.net\.ssl|DownloadManager|android\.webkit|io\.ktor|retrofit2|com\.android\.volley' . 2>/dev/null | head -n "$max") || true
+  (cd "$src" && grep -rl -E -e 'java\.net\.(URL|Socket|HttpURLConnection|DatagramSocket)|openConnection\(|okhttp3|javax\.net\.ssl|DownloadManager|android\.webkit|io\.ktor|retrofit2|com\.android\.volley' . 2>/dev/null | LC_ALL=C sort | head -n "$max") || true
 
   echo
   echo "## jadx failures in scope (methods)"
@@ -153,7 +163,7 @@ string_section=$(timeout 900 python3 "$root/scripts/stringfog.py" "$name" 2>&1 |
     # stage's outputs (strings, decrypted assets and pages)
     [ -d "$out/jadx-strings" ] && (cd "$out" && grep -rn -i -o -E -e "/\* = \"[^\"]*($inj)[^\"]*\"" -- jadx-strings 2>/dev/null)
     [ -d "$out/decrypt/out" ] && (cd "$out" && grep -rn -i -a -I -E -e "$inj" -- decrypt/out 2>/dev/null)
-  } | cut -c1-240 | head -n "$max" || true
+  } | capped | cut -c1-240 || true
 
   # rules R1, R2 (proposed from vulnerable-app misses; kept after ./cupella gate)
   if [ -d "$out/apktool/res" ]; then
@@ -165,9 +175,9 @@ string_section=$(timeout 900 python3 "$root/scripts/stringfog.py" "$name" 2>&1 |
   fi
   echo
   echo "## Cloud configuration (Firebase, Google API keys, AWS)"
-  (cd "$src" && grep -rn -E -e 'firebaseio\.com|firebasestorage|firebase_database_url|AIza[0-9A-Za-z_-]{35}|amazonaws\.com|cognito-identity|IdentityPoolId|identityPoolId|CognitoCachingCredentialsProvider|BasicAWSCredentials' -- "${scopes[@]}" 2>/dev/null | cut -c1-240 | head -n "$max") || true
+  (cd "$src" && grep -rn -E -e 'firebaseio\.com|firebasestorage|firebase_database_url|AIza[0-9A-Za-z_-]{35}|amazonaws\.com|cognito-identity|IdentityPoolId|identityPoolId|CognitoCachingCredentialsProvider|BasicAWSCredentials' -- "${scopes[@]}" 2>/dev/null | capped | cut -c1-240) || true
   if [ -d "$out/apktool/res" ]; then
-    (cd "$out/apktool/res" && grep -rn -E -e 'firebaseio\.com|firebase_database_url|google_api_key|AIza[0-9A-Za-z_-]{35}|amazonaws\.com|cognito|IdentityPool' --include='*.xml' -- . 2>/dev/null | sed 's#^\./#res/#' | cut -c1-240 | head -n "$max") || true
+    (cd "$out/apktool/res" && grep -rn -E -e 'firebaseio\.com|firebase_database_url|google_api_key|AIza[0-9A-Za-z_-]{35}|amazonaws\.com|cognito|IdentityPool' --include='*.xml' -- . 2>/dev/null | sed 's#^\./#res/#' | capped | cut -c1-240) || true
   fi
   echo "$string_section"
   python3 "$root/scripts/code-vs-package.py" "$name" "${scopes[@]}" 2>&1 || echo "code-vs-package failed"

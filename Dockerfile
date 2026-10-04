@@ -24,14 +24,15 @@ ARG QUARK_RULES_COMMIT=80c902f420cf0b7d70ef9e41a9095e445171d01e
 # Runtime for the scripts (python3, unzip, openssl, binutils for strings/c++filt,
 # capstone-tool for cstool, JDK for jadx/apktool/Ghidra/jarsigner/keytool) and the
 # toolchain blutter needs to build against a Dart runtime (git, cmake, ninja, g++,
-# capstone and ICU headers, two Python modules), and pycryptodome (Debian installs it
+# capstone and ICU headers, two Python modules; make, zlib, bison and flex also build
+# Ghidra's decompiler on arm64), and pycryptodome (Debian installs it
 # as the Cryptodome package) for the agent-written decryptors (scripts/run-decryptor.sh).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl unzip git python3 openssl binutils file grep \
       openjdk-21-jdk-headless fontconfig fonts-dejavu-core \
       capstone-tool libcapstone-dev libicu-dev \
-      cmake ninja-build g++ pkg-config \
+      cmake ninja-build g++ pkg-config make zlib1g-dev bison flex \
       python3-pyelftools python3-requests python3-venv python3-dev \
       python3-pycryptodome \
  && rm -rf /var/lib/apt/lists/*
@@ -54,6 +55,21 @@ RUN curl -fL -o /tmp/ghidra.zip \
  && unzip -q /tmp/ghidra.zip -d /opt/tools \
  && mv /opt/tools/ghidra_${GHIDRA_VERSION}_PUBLIC /opt/tools/ghidra \
  && rm /tmp/ghidra.zip
+
+# The Ghidra release ships its native decompiler for linux_x86_64 only. On arm64 (Apple
+# Silicon under Docker Desktop, ARM Linux) every function would fail to decompile, so
+# build decompile and sleigh there from the C++ sources the release includes. Its
+# Makefile knows only x86 and adds -m32 on any other Linux CPU: ARCH_TYPE= drops it. It
+# creates its object directories only for a single goal, so one make per binary.
+RUN if [ "$(uname -m)" = aarch64 ]; then \
+      d=/opt/tools/ghidra/Ghidra/Features/Decompiler \
+      && make -C "$d/src/decompile/cpp" -j"$(nproc)" ARCH_TYPE= ghidra_opt \
+      && make -C "$d/src/decompile/cpp" -j"$(nproc)" ARCH_TYPE= sleigh_opt \
+      && mkdir -p "$d/os/linux_arm_64" \
+      && cp "$d/src/decompile/cpp/ghidra_opt" "$d/os/linux_arm_64/decompile" \
+      && cp "$d/src/decompile/cpp/sleigh_opt" "$d/os/linux_arm_64/sleigh" \
+      && find "$d/src/decompile/cpp" \( -name '*.o' -o -name '*_opt' \) -type f -delete; \
+    fi
 
 # blutter sources at a pinned commit. It compiles against the Dart runtime of each
 # app's Dart version at first use; those builds go to the cache/ mount (see ./cupella),

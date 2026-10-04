@@ -16,6 +16,7 @@
     <nav>
       <a href="#when">When to use</a>
       <a href="#how">How it works</a>
+      <a href="#example">Example</a>
       <a href="#results">Results</a>
       <a href="#safety">Safety</a>
       <a href="#start">Setup</a>
@@ -89,10 +90,15 @@
     <li>Junk bytes inserted to make the usual decompilers fail. Cupella's own disassembler reads past them.</li>
     <li>Manifests padded with hundreds of invented permissions.</li>
     <li>String encryption at every call site. Common schemes decode automatically; the plaintext is written next to each call.</li>
-    <li>Payloads encrypted in assets, in several layers. One banking-trojan dropper had five; all were decrypted with keys found in the APK.</li>
+    <li>Payloads encrypted in assets, in several layers. One banking-trojan dropper had five; all were decrypted with keys found in the APK (<a href="#example">example</a>).</li>
     <li>App code hidden in a package that looks like a common library.</li>
     <li>Stripped native libraries that standard tools cannot read.</li>
   </ul>
+</section>
+
+<section id="example">
+  <h2>Example: a five-layer dropper</h2>
+  <p>A banking-trojan dropper analyzed in 2026 hid its app inside five encrypted layers. Each layer had to be decrypted before the next could be read, and the report could describe what the app does only after the last one.</p>
 <figure><div class="fig-scroll"><svg viewBox="0 0 820 320" role="img" aria-labelledby="lay-t"><title id="lay-t">The five layers of a banking-trojan dropper, decrypted from the outside in</title><rect x="10" y="10" width="800" height="300" rx="10" class="s-layer"/><text x="24" y="30" class="s-t">outer APK, posing as a carrier update</text><text x="317" y="30" class="s-m">packer; junk code breaks the usual decompilers</text><rect x="34" y="40" width="752" height="256" rx="10" class="s-layer"/><text x="48" y="60" class="s-t">layer 1: AES asset</text><text x="196" y="60" class="s-m">dropper dex</text><rect x="58" y="70" width="704" height="212" rx="10" class="s-layer"/><text x="72" y="90" class="s-t">layer 2: XOR asset, key from native library</text><text x="410" y="90" class="s-m">split APK of the second app</text><rect x="82" y="100" width="656" height="168" rx="10" class="s-layer"/><text x="96" y="120" class="s-t">layer 3: AES asset</text><text x="244" y="120" class="s-m">three dex files with the app code</text><rect x="106" y="130" width="608" height="124" rx="10" class="s-layer"/><text x="120" y="150" class="s-t">layer 4: string encryption</text><text x="329" y="150" class="s-m">5,032 strings decoded</text><rect x="130" y="160" width="560" height="80" rx="10" class="s-layer-fill"/><text x="144" y="180" class="s-t">layer 5: AES configuration</text><text x="353" y="180" class="s-m">C2 host, overlay pages</text><text x="410" y="216" class="s-t" text-anchor="middle">what the app does: remote control, SMS, overlays, keylogging</text></svg></div><figcaption>A banking-trojan dropper posing as a mobile-carrier update (2026). Each layer was decrypted without running the app, with keys found in the APK or its native library.</figcaption></figure>
 </section>
 
@@ -146,7 +152,7 @@
 
 <section id="start">
   <h2>Setup</h2>
-  <p>Requires Docker and a coding agent that reads <code>AGENTS.md</code> and runs shell commands.</p>
+  <p>Requires Docker and a coding agent that reads <code>AGENTS.md</code> and runs shell commands. Runs on Linux and on macOS (Apple Silicon, Docker Desktop).</p>
 <pre><code>git clone https://github.com/wistrand/cupella.git cupella &amp;&amp; cd cupella
 ./cupella setup   # checks Docker, builds the image once, self-test
 cp ~/Downloads/some.apk data/

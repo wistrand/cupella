@@ -351,6 +351,11 @@ common=(--rm
 # cache/ holds blutter builds that later analyses execute: read-only wherever APK data
 # is mounted, so no sample can plant code there; only builder() writes it
 analysis=(-v "$ws/data:/repo/data:ro" -v "$ws/work:/repo/work" -v "$root/cache:/cache:ro")
+# SCAN_MAX (scan.sh hits per section) is the one setting passed through; a number only
+if [ -n "${SCAN_MAX:-}" ]; then
+  [[ "$SCAN_MAX" =~ ^[0-9]+$ ]] || { echo "SCAN_MAX must be a number" >&2; exit 1; }
+  analysis+=(-e "SCAN_MAX=$SCAN_MAX")
+fi
 
 # offline, with the APK data: every analysis step
 offline() { "$docker" run "${common[@]}" --network none "${analysis[@]}" "$@"; }

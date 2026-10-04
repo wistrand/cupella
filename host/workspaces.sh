@@ -34,14 +34,15 @@ while [ $# -gt 0 ]; do
     *) usage ;;
   esac
 done
-for w in "${found[@]}"; do
+# ${a[@]+...}: bash before 4.4 (macOS has 3.2) calls an empty array unbound under set -u
+for w in ${found[@]+"${found[@]}"}; do
   [ "$w" != "$(cd "$root" && pwd -P)" ] || continue
   grep -qxF -- "$w" "$registry" 2> /dev/null || { echo "$w" >> "$registry"; echo "added: $w"; }
 done
 
 [ -s "$registry" ] || { echo "no workspaces recorded (./cupella setup --workspace DIR makes one; --find DIR searches for older ones)"; exit 0; }
 here=$(cd "$root" && pwd -P)
-count() { { find "$@" 2> /dev/null || true; } | wc -l; }  # a missing directory counts 0
+count() { { find "$@" 2> /dev/null || true; } | wc -l | tr -d ' '; }  # missing directory: 0; BSD wc pads
 printf '%-6s %5s %7s %9s  %-10s  %s\n' state apks reports proposals refreshed path
 while IFS= read -r w; do
   [ -n "$w" ] || continue
