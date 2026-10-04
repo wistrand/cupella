@@ -486,25 +486,33 @@ case "$cmd" in
     "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-decryptor.sh --exec "$n" \
       && offline "$image" scripts/run-decryptor.sh --unpack "$n" ;;
   claims-promote.py)
-    # a reader's draft claims (progress/<role>-claims.jsonl) into reports/<name>/claims.jsonl:
-    # a container that sees only that draft file and reports/<name>/, no APK data
+    # a reader's draft claims (progress/<role>-claims/D<n>.json, one file per claim; before
+    # 2026-10-04 progress/<role>-claims.jsonl) into reports/<name>/claims.jsonl: a container
+    # that sees only those drafts and reports/<name>/, no APK data
     n=${1:-}; role=${2:-}
     [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. && "$role" =~ ^[a-z0-9][a-z0-9-]{0,40}$ ]] \
       || { echo "usage: ./cupella claims-promote.py <name> <role> <D-id>... [--draft] | --list" >&2; exit 1; }
-    d="$ws/work/$n/progress/$role-claims.jsonl"
-    [ -f "$d" ] && [ ! -L "$d" ] || { echo "no work/$n/progress/$role-claims.jsonl" >&2; exit 1; }
+    d="$ws/work/$n/progress/$role-claims"
+    mounts=()
+    [ -d "$d" ] && [ ! -L "$d" ] && mounts+=(-v "$d:/repo/work/$n/progress/$role-claims:ro")
+    [ -f "$d.jsonl" ] && [ ! -L "$d.jsonl" ] && mounts+=(-v "$d.jsonl:/repo/work/$n/progress/$role-claims.jsonl:ro")
+    [ ${#mounts[@]} -gt 0 ] || { echo "no work/$n/progress/$role-claims/ (or $role-claims.jsonl)" >&2; exit 1; }
     [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/" >&2; exit 1; }
-    exec "$docker" run "${common[@]}" --network none -v "$d:/repo/work/$n/progress/$role-claims.jsonl:ro" \
+    exec "$docker" run "${common[@]}" --network none "${mounts[@]}" \
       -v "$ws/reports/$n:/repo/reports/$n" "$image" scripts/claims-promote.py "$@" ;;
   claims-merge.py)
-    # verdicts (reader output) into reports/<name>/claims.jsonl: a container that sees only
-    # the verdict file and reports/<name>/, no APK data
+    # verdicts (reader output: progress/verify-verdicts/<id>.json, one file per claim; before
+    # 2026-10-04 progress/verify-verdicts.jsonl) into reports/<name>/claims.jsonl: a
+    # container that sees only the verdicts and reports/<name>/, no APK data
     n=${1:-}
     [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. ]] || { echo "usage: ./cupella claims-merge.py <name>" >&2; exit 1; }
-    v="$ws/work/$n/progress/verify-verdicts.jsonl"
-    [ -f "$v" ] && [ ! -L "$v" ] || { echo "no work/$n/progress/verify-verdicts.jsonl" >&2; exit 1; }
+    v="$ws/work/$n/progress/verify-verdicts"
+    mounts=()
+    [ -d "$v" ] && [ ! -L "$v" ] && mounts+=(-v "$v:/repo/work/$n/progress/verify-verdicts:ro")
+    [ -f "$v.jsonl" ] && [ ! -L "$v.jsonl" ] && mounts+=(-v "$v.jsonl:/repo/work/$n/progress/verify-verdicts.jsonl:ro")
+    [ ${#mounts[@]} -gt 0 ] || { echo "no work/$n/progress/verify-verdicts/ (or verify-verdicts.jsonl)" >&2; exit 1; }
     [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/" >&2; exit 1; }
-    exec "$docker" run "${common[@]}" --network none -v "$v:/repo/work/$n/progress/verify-verdicts.jsonl:ro" \
+    exec "$docker" run "${common[@]}" --network none "${mounts[@]}" \
       -v "$ws/reports/$n:/repo/reports/$n" "$image" scripts/claims-merge.py "$n" ;;
   scan.sh)
     offline "$image" "scripts/$cmd" "$@" || exit

@@ -6,7 +6,10 @@ file in `agent_docs/`.
 
 Cupella: a workspace for static analysis of Android APKs that combines scripted tools
 with agent runs. The architecture is not tied to APKs (only the front end and the
-benchmarks are); keep new format-independent parts that way. The split is deliberate:
+benchmarks are); keep new format-independent parts that way. The purpose is defensive:
+describing what an app does and where it is weak, with evidence, so that it can be
+assessed, detected, and reported. Writing exploits, and writing code that carries out
+what a sample does, is not part of it. The split is deliberate:
 
 - Scripts do everything deterministic: unpacking, decoding, decompiling, listing,
   pattern searches. Same input, same output, no judgment.

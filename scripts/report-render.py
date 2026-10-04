@@ -165,7 +165,8 @@ def render(rep):
   sec("Components", body, "None declared (`manifest.xml`).")
 
   net = f.get("network", {})
-  rows = [[code(h["host"], 60), ", ".join(code(u, 80) for u in h["urls"][:4]),
+  rows = [[code(h["host"], 60), ", ".join(code(u, 80) for u in h["urls"][:8]) + (
+            " (+%d more)" % (len(h["urls"]) - 8) if len(h["urls"]) > 8 else ""),
            ", ".join("`%s`" % r for r in h["refs"][:3]) or "dex strings only"] for h in net.get("hosts", [])[:40]]
   body = table(["Host", "URLs", "Where (scan scope)"], rows)
   if net and not rows:

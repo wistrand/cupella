@@ -122,8 +122,8 @@ agent's context is then lost. In every mode:
   malformed tool call) then loses only that piece, and `progress/main.md` names where to
   resume. Rebuild with `./cupella report-build.py <name>` whenever it helps to see the report.
 - For a malicious or suspected sample, findings come from a reader subagent (`reader`
-  role, `prompts/read-area.md`) that writes draft claims to
-  `work/<name>/progress/<role>-claims.jsonl`. The main agent checks each draft's key
+  role, `prompts/read-area.md`) that writes draft claims, one file each, to
+  `work/<name>/progress/<role>-claims/D<n>.json`. The main agent checks each draft's key
   steps in the code and promotes it with `./cupella claims-promote.py <name> <role> D<n>`
   (`--list` shows the drafts). A main agent describing malware behavior at length can be
   stopped by the model provider's safety classifier, and everything in that response is
@@ -149,7 +149,7 @@ agent's context is then lost. In every mode:
   `work/<prefix>*/progress/main.md` (and in a workspace, its own `work/`). Never search
   session transcripts for it.
 - A new session continuing the work reads `progress/main.md`, `progress/main-findings.md`,
-  readers' `progress/*-claims.jsonl` (and `*-findings.md` from before), the sources in
+  readers' `progress/*-claims/` (and `*-claims.jsonl`, `*-findings.md` from before), the sources in
   `reports/<name>/`, and the partial report first, then goes on from the first section
   still "not reached". Re-read code only to check an entry, not
   to rebuild it. This is the one case
@@ -213,14 +213,17 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
   key or algorithm, and check that each child in `outputs.txt` decompiled.
 - Name subagent output files after their content, never `report*`: Claude Code, for one, refuses
   a subagent's write to a file named like a report ([gotchas.md](gotchas.md)).
-- Reader output is `work/<name>/progress/<role>-claims.jsonl`, draft claims written one
-  by one, which the main agent promotes with `./cupella claims-promote.py`;
-  the final message is one line. A reader that summarizes malware behavior in its final
+- Reader output is `work/<name>/progress/<role>-claims/D<n>.json`, one draft claim per
+  file, which the main agent promotes with `./cupella claims-promote.py`;
+  the final message is one line. Agent output is one record per write: a reader has no
+  append, so a growing file would be resent whole for each record, and one failed write
+  would block the rest. A reader that summarizes malware behavior in its final
   message can be stopped by a safety classifier while writing it, and the summary is
   lost ([harnesses.md](harnesses.md)).
-- Verification output is `work/<name>/verification.md`, written section by section, or
+- Verification output is `work/<name>/verification.md` (for a rendered report written
+  once at the end, for a hand-written one section by section), or
   the agent's final message when it cannot write. For a rendered report also
-  `work/<name>/progress/verify-verdicts.jsonl`, one verdict per claim, which
+  `work/<name>/progress/verify-verdicts/<id>.json`, one verdict file per claim, which
   `./cupella claims-merge.py <name>` merges into `reports/<name>/claims.jsonl`. Fix every "wrong" and "overstated" item after
   checking it against the code yourself; the verifier can be wrong too. One data point
   for cost: verifying the Octo report took about 150k tokens and 3 minutes and found 3

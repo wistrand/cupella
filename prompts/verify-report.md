@@ -1,7 +1,7 @@
 <!-- Prompt for the verification stage of a report: a fresh agent tries to refute each
 claim against the code. Replace {NAME} with the sample name. Run as a fresh agent with the
 reader role (roles/reader.md), never a fork (a fork shares the author's reading and its mistakes).
-A rendered report (reports/{NAME}/ exists) gets verdicts per claim in a JSON Lines file that
+A rendered report (reports/{NAME}/ exists) gets one verdict file per claim, which
 ./cupella claims-merge.py {NAME} merges into the claims; a hand-written one gets the table only. -->
 You are checking another analyst's report on an Android app, statically. Your job is to find claims that do not hold. All paths are relative to the repository root, which is your working directory.
 
@@ -28,7 +28,7 @@ Progress: append one line per step to work/{NAME}/progress/verify.md as you go (
 
 Output:
 
-- Rendered report: write work/{NAME}/progress/verify-verdicts.jsonl, one line per claim checked, each exactly {"id": "<claim id>", "result": "holds" | "overstated" | "wrong", "note": "<why, one or two sentences, at most 500 characters>", "refs": ["<path>:<line>", ...]} (refs: the lines you read; required for overstated and wrong). Rewrite the whole file after each claim, so that it is complete at every point. Keep notes factual and short: what the code at the refs shows.
-- Both kinds: write work/{NAME}/verification.md after the first claim or section you check and rewrite it after each further one: a counts line ("N holds, N overstated, N wrong"), then a table: section or claim id, claim (short), verdict, path:line, reason, then "Omissions".
+- Rendered report: as soon as a claim is checked, write its verdict to a file of its own, work/{NAME}/progress/verify-verdicts/<claim id>.json (F1.json, ...), exactly {"id": "<claim id>", "result": "holds" | "overstated" | "wrong", "note": "<why, one or two sentences, at most 500 characters>", "refs": ["<path>:<line>", ...]} (refs: the lines you read; required for overstated and wrong). A verdict file is written once; never resend earlier verdicts. Keep notes factual and short: what the code at the refs shows. Verdicts on the notes go into the table below, not into verdict files. When every claim and section is checked, write work/{NAME}/verification.md once: a counts line ("N holds, N overstated, N wrong"), then a table: section or claim id, claim (short), verdict, path:line, reason, then "Omissions".
+- Hand-written report: write work/{NAME}/verification.md (the same counts line, table, and "Omissions") after the first section you check and again after each further section; it is the only output, so it must be complete at every point.
 
 Your final message is one line: the counts and the paths of the files. Never describe the app's behavior in the final message. If the Write tool is refused, return the table as your final message instead.

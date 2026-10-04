@@ -151,6 +151,11 @@ def main():
           ok += 1  # a Dart source file name from the snapshot; blutter merges files
         continue
       if not rels:
+        # in renamed code a bare `g.c` is Class.method, not a C file: a call (`g.c(`), or the
+        # method of a method citation (`g.c` (`pkg/g.java:133`))
+        if "/" not in path and not spec and (text[m.end():m.end() + 1] == "(" or re.match(
+            r"\s*\(`(?:[\w$.-]+/)*%s\.java:" % re.escape(path.rsplit(".", 1)[0]), report[span.end():])):
+          continue
         if "/" in path or spec or path.endswith((".java", ".c", ".dart", ".smali")):
           problem(span.start(), path + spec, "no such file under work/%s/" % name)
         continue

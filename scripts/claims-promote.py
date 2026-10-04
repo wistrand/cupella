@@ -2,15 +2,20 @@
 """Promote a reader's draft claims into an analysis's claims.
 
 A reader agent (prompts/read-area.md) cannot edit reports/; it writes its findings as
-claim records to work/<name>/progress/<role>-claims.jsonl: the fields of claims-check.py,
-with ids D1, D2, ... and status "draft". The main agent checks a draft's key steps in the
-code, then promotes it: this script copies the named drafts into
-reports/<name>/claims.jsonl with the next free ids (F<n>), status "confirmed" (or "draft"
-with --draft, for one still to check), and "author" set to the role. It never changes a
-claim already there. The previous claims.jsonl is kept as claims.jsonl.prev. Nothing is
-written when a named draft is missing or fails the schema.
+claim records, one file each: work/<name>/progress/<role>-claims/D<n>.json, a JSON object
+with the fields of claims-check.py, id D<n> as in the file name, and status "draft". One
+record per file means a reader adds a claim without resending the earlier ones, and a
+write that fails loses that claim only. The form before 2026-10-04, one object per line
+in work/<name>/progress/<role>-claims.jsonl, is still read (both may exist; an id in both
+is a problem). The main agent checks a draft's key steps in the code, then promotes it:
+this script copies the named drafts into reports/<name>/claims.jsonl with the next free
+ids (F<n>), status "confirmed" (or "draft" with --draft, for one still to check), and
+"author" set to the role. It never changes a claim already there. The previous
+claims.jsonl is kept as claims.jsonl.prev. Nothing is written when a named draft is
+missing, is not JSON, or fails the schema; a broken draft that was not named, in a file of
+its own, does not stop the others.
 
-./cupella runs this in a container that sees only the draft file (read-only) and
+./cupella runs this in a container that sees only the drafts (read-only) and
 reports/<name>/. Then: ./cupella claims-check.py <name>, ./cupella report-build.py <name>.
 
 Usage: ./cupella claims-promote.py <name> <role> <D-id>... [--draft]
@@ -28,6 +33,26 @@ import units  # noqa: E402
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 
+def records(ddir, dpath, role):
+  """[(where, text, id from the file name or None)] of the drafts: the files D<n>.json of
+  <role>-claims/ in number order, then the lines of <role>-claims.jsonl"""
+  out = []
+  if os.path.isdir(ddir):
+    names = [f for f in os.listdir(ddir) if re.match(r"^D\d+\.json$", f)]
+    for f in sorted(names, key=lambda x: int(x[1:-5])):
+      p = os.path.join(ddir, f)
+      if os.path.islink(p) or not os.path.isfile(p):
+        continue
+      with open(p, errors="replace") as fh:
+        out.append(("%s-claims/%s" % (role, f), fh.read(), f[:-5]))
+  if os.path.isfile(dpath):
+    with open(dpath, errors="replace") as fh:
+      for n, line in enumerate(fh, 1):
+        if line.strip():
+          out.append(("%s-claims.jsonl:%d" % (role, n), line, None))
+  return out
+
+
 def main():
   args = sys.argv[1:]
   as_draft, listing = "--draft" in args, "--list" in args
@@ -38,34 +63,38 @@ def main():
   if not re.match(r"^[a-z0-9][a-z0-9-]{0,40}$", role):
     sys.exit("role must be lowercase letters, digits, and -")
   dpath = os.path.join(ROOT, "work", name, "progress", "%s-claims.jsonl" % role)
+  ddir = os.path.join(ROOT, "work", name, "progress", "%s-claims" % role)
   cpath = os.path.join(ROOT, "reports", name, "claims.jsonl")
-  if not os.path.isfile(dpath):
-    sys.exit("no work/%s/progress/%s-claims.jsonl" % (name, role))
-  drafts, problems = {}, []
-  with open(dpath, errors="replace") as f:
-    for n, line in enumerate(f, 1):
-      if not line.strip():
-        continue
-      try:
-        d = json.loads(line)
-      except ValueError as e:
-        problems.append("%s-claims.jsonl:%d: not JSON (%s)" % (role, n, e))
-        continue
-      if not isinstance(d, dict) or not re.match(r"^D\d+$", str(d.get("id", ""))):
-        problems.append("%s-claims.jsonl:%d: id must be D<number>" % (role, n))
-        continue
-      if d["id"] in drafts:
-        problems.append("%s-claims.jsonl:%d: duplicate id %s" % (role, n, d["id"]))
-      drafts[d["id"]] = d
+  if not os.path.isfile(dpath) and not os.path.isdir(ddir):
+    sys.exit("no work/%s/progress/%s-claims/ (or %s-claims.jsonl)" % (name, role, role))
+  # found: (draft id or None when the record does not say, problem); a problem with an id
+  # stops only a promotion that names it
+  drafts, found = {}, []
+  for where, text, stem in records(ddir, dpath, role):
+    try:
+      d = json.loads(text)
+    except ValueError as e:
+      found.append((stem, "%s: not JSON (%s)" % (where, e)))
+      continue
+    if not isinstance(d, dict) or not re.match(r"^D\d+$", str(d.get("id", ""))):
+      found.append((stem, "%s: id must be D<number>" % where))
+      continue
+    if stem and d["id"] != stem:
+      found.append((stem, "%s: id %s differs from the file name" % (where, d["id"])))
+      continue
+    if d["id"] in drafts:
+      found.append((d["id"], "%s: duplicate id %s" % (where, d["id"])))
+    drafts[d["id"]] = d
   if listing:
     for d in drafts.values():
       print("%s  %s  [%s]  %s" % (d["id"], d.get("confidence", "?"), d.get("threat", ""), str(d.get("title", ""))[:100]))
-    for p in problems:
+    for _i, p in found:
       print(p)
     return
-  missing = [i for i in want if i not in drafts]
+  problems = [p for i, p in found if i is None or i in want]
+  missing = [i for i in want if i not in drafts and not any(j == i for j, _p in found)]
   if missing:
-    problems.append("no draft %s in %s-claims.jsonl" % (", ".join(missing), role))
+    problems.append("no draft %s in %s-claims/ or %s-claims.jsonl" % (", ".join(missing), role, role))
   existing = []
   if os.path.isfile(cpath):
     with open(cpath) as f:

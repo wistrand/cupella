@@ -144,6 +144,18 @@ From the agent benchmarks; each is small and testable on the same samples.
   [harnesses.md](harnesses.md) and have not run an analysis. Run one sample and one
   benchmark slice through each before claiming benchmark parity.
 
+- Incremental agent output (2026-10-04). Readers and the verifier added a record by
+  rewriting the whole file, because the `reader` role has no append: output tokens grew
+  with the square of the record count, earlier records could change when retyped, and
+  one failed write blocked every later one ([harnesses.md](harnesses.md)). Claims and
+  verdicts are now one file per record (`progress/<role>-claims/D<n>.json`,
+  `progress/verify-verdicts/<id>.json`), read by `claims-promote.py` and
+  `claims-merge.py` next to the earlier single-file form. Checked on synthetic records
+  only. Open: a reader and a verifier run with the new prompts; `./cupella check` has no
+  fixture for either script; progress files (`progress/<role>.md`) are still rewritten
+  for each line, which stays cheap while lines are short, and would need Edit in the
+  `reader` role or one file per step to change.
+
 - Rendered reports (since 2026-10-04, [design-report.md](design-report.md) "Rendered
   reports"; the default for new analyses): `facts.py`, `claims-check.py`, `report-build.py`
   (JSON), `report-render.py` (markdown from the JSON), `claims-promote.py` (reader drafts),

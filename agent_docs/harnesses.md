@@ -99,8 +99,16 @@ agent needs; proposals go to the workspace's `proposals/`, inside the sandbox, a
 - The classifier has also stopped readers at the very end, while they wrote their final
   summary of a banking trojan's SMS and command code (two of four readers, 2026-10-04):
   the reading was done and only the summary was lost. Readers now write each finding
-  as a draft claim to `work/<name>/progress/<role>-claims.jsonl` as they confirm it and
+  as a draft claim to `work/<name>/progress/<role>-claims/D<n>.json` as they confirm it and
   end with a one-line message (`prompts/read-area.md`).
+- With `claude-fable-5-1` as the session model (readers inherit it), four of four
+  readers on a small data-collecting app were stopped on the write adding their second
+  or fourth claim (2026-10-04, sample cdcdef6c...). Reading was never stopped. The
+  claims were then one JSON Lines file per reader: a reader has only Write, so adding a
+  claim resent every earlier one, and a reader whose write was stopped could not add
+  another claim without resending the stopped content and stopped there. Claims and
+  verdicts are one file per record since then. Whether the model's additional safety
+  measures or the resent content caused the stops is not known.
 - It has stopped the main agent writing a report in large pieces (table below).
   Nothing from a stopped response is kept. The main agent now writes one section per
   write and takes the Findings and Indicators of malware from a reader's findings file

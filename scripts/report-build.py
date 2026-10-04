@@ -99,8 +99,10 @@ def indicators(f, claims, notes_have, added=()):
     if not c["name"].startswith(("androidx.", "com.google.")):
       rows.append({"type": "Component", "value": c["name"], "source": "manifest.xml"})
   for h in net.get("hosts", [])[:30]:
-    for u in h["urls"][:4]:
-      rows.append({"type": "URL", "value": u, "source": (h.get("url_refs") or {}).get(u) or "dex strings (scan.txt)"})
+    # every URL the scan scope's code names; of those only in dex strings, the first 4
+    refs = h.get("url_refs") or {}
+    for u in [u for u in h["urls"] if u in refs] + [u for u in h["urls"] if u not in refs][:4]:
+      rows.append({"type": "URL", "value": u, "source": refs.get(u) or "dex strings (scan.txt)"})
   rows += [dict(r, added=True) for r in added]
   return rows
 

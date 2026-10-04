@@ -45,11 +45,11 @@ Two steps:
   "api": "<label>"}` (a row of the Behavior facts table). The renderer prints chain and gate.
 - `status` `draft` renders under "Not yet confirmed"; `confirmed` under its threat;
   `rejected` not at all.
-- Readers (`prompts/read-area.md`) write draft claims (ids `D<n>`) to
-  `work/<name>/progress/<role>-claims.jsonl`; `./cupella claims-promote.py <name> <role>
+- Readers (`prompts/read-area.md`) write draft claims (ids `D<n>`), one file each, to
+  `work/<name>/progress/<role>-claims/D<n>.json`; `./cupella claims-promote.py <name> <role>
   D<n>...` copies the ones the main agent checked into `claims.jsonl` with the next `F` ids.
-- Verification (`prompts/verify-report.md`) writes `work/<name>/progress/verify-verdicts.jsonl`,
-  one verdict per claim; `./cupella claims-merge.py <name>` merges them into the claims'
+- Verification (`prompts/verify-report.md`) writes `work/<name>/progress/verify-verdicts/<id>.json`,
+  one verdict file per claim; `./cupella claims-merge.py <name>` merges them into the claims'
   `verdict` field (the previous file stays as `claims.jsonl.prev`). Before editing a claim
   found `wrong` or `overstated`, check the code yourself; the verifier can be wrong too.
 - The JSON holds the facts, the findings in report order (numbered) with entry evidence

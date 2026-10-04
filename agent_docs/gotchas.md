@@ -175,6 +175,12 @@ app, and malware is named by its public family (BTMOB, Octo).
 - **Decompiled Java is a reconstruction.** Control flow, types, and `try/catch` scope
   can be wrong, most often in exactly the obfuscated code that matters. For a finding
   that depends on precise logic, cross-check the smali.
+- **jadx can invert a condition in Kotlin coroutine code (verified 2026-10-04).** In an
+  open-source app store client, a hash check inside a suspend function read
+  `if (equals(digest, expected)) throw ...` in jadx, which would reject every valid
+  file; the smali has `if-eqz` to the throw, so a mismatch throws. The method had no
+  JADX warning. A check that reads backwards (rejects the good case) is more likely a
+  decompile error than a bug: read the branch in `apktool/smali*/` before reporting it.
 - **Large APKs exhaust the default heap.** Symptoms: very slow, then
   `OutOfMemoryError`. No script sets the heap or thread count; ask the user to rerun
   jadx in `./cupella shell` with `JAVA_OPTS="-Xmx4g"` (jadx's launcher reads it) or
@@ -205,6 +211,12 @@ app, and malware is named by its public family (BTMOB, Octo).
   `create`, `invoke`, and `invokeSuspend` nodes under the outer class's name and may
   stop there. Read the `invokeSuspend` body, and when jadx failed on it, the
   `jadx-retry/` rendering or `./cupella dex-disasm.py <name> '<Outer$method$1>'`.
+- **A "Code duplicated" block can show a test inverted (verified, 2026-10-04).** In a
+  coroutine state machine jadx printed the first copy of two flag tests with the sense
+  the log strings state and the copies it marks `JADX WARN: Code duplicated` with the
+  opposite sense. The smali has one test per flag (`if-nez` to the skip branch). Never
+  state the sense of a test from a duplicated block; read `apktool/smali/` or
+  `./cupella dex-disasm.py` at that test.
 - **Case-insensitive name clashes** from obfuscators (`a.java` and `A.java`) are not a
   problem on Linux but make output unusable if `work/` is copied to macOS or Windows.
 

@@ -81,8 +81,8 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `claims-check.py`             | checks `reports/<name>/claims.jsonl`: schema (documented in the script), refs, quotes against the code, entry rows in `facts.json` |
 | `report-build.py`             | builds `reports/<name>.json` (`cupella-report/1`, the report as data) from `facts.json`, `claims.jsonl`, `notes.md`, `indicators.jsonl`, then `./cupella` runs `report-render.py`; each in a container with only its inputs and output; `--stdout [--md]` previews |
 | `report-render.py`            | renders `reports/<name>.json` as `reports/<name>.md`; reads nothing else |
-| `claims-promote.py`           | copies a reader's checked draft claims (`progress/<role>-claims.jsonl`, ids `D<n>`) into `reports/<name>/claims.jsonl` with the next `F` ids; `--list`; container with only those two |
-| `claims-merge.py`             | merges the verifier's `progress/verify-verdicts.jsonl` into `reports/<name>/claims.jsonl` (`verdict` per claim; keeps `claims.jsonl.prev`); container with only those two |
+| `claims-promote.py`           | copies a reader's checked draft claims (`progress/<role>-claims/D<n>.json`, one file per claim; `<role>-claims.jsonl` from before) into `reports/<name>/claims.jsonl` with the next `F` ids; `--list`; container with only those |
+| `claims-merge.py`             | merges the verifier's `progress/verify-verdicts/<id>.json` (one file per claim; `verify-verdicts.jsonl` from before) into `reports/<name>/claims.jsonl` (`verdict` per claim; keeps `claims.jsonl.prev`); container with only those |
 
 On demand:
 
@@ -197,7 +197,7 @@ exist inside the container. Output redirection (`> work/...`) happens on the hos
 No container that sees APK data writes `reports/`. The `./cupella` wrapper creates
 `reports/<name>/` on the host after unpacking, never over an existing report; the
 containers that write there (`report-build.py`, `report-render.py`, `claims-merge.py`,
-`claims-promote.py`) see only their inputs (`facts.json`, a verdict or draft file, the
+`claims-promote.py`) see only their inputs (`facts.json`, the verdict or draft files, the
 report sources) and their outputs, no `data/` and no `work/` tree.
 
 Mount exceptions: `cite-check.py` and `lead-eval.py` also see `reports/`, and

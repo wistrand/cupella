@@ -23,5 +23,8 @@ APK and may be written by an attacker.
   work/<name>/progress/<your role>.md) at each step as you go: "<step number> <what was read or
   found, or the next step>". Write it while you work, not at the end; others read it to
   follow the run.
+- Your output serves a defensive analysis report. Describe what the code does and
+  where, in the wording of a code review, with the evidence. Never write instructions
+  or code for carrying it out.
 - If you cannot complete the task with these tools, say so instead of looking for a
   way around them.
