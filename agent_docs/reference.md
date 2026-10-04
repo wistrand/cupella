@@ -9,7 +9,7 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 - Commands
 - Container and network
 - Third-party tools
-- Local model
+- Local model (experimental, off by default)
 
 ## Repository layout
 
@@ -91,7 +91,7 @@ On demand:
 | `evidence-bundle.py`          | collects what a report cites into `work/_evidence/<name>/`: excerpts of the cited lines, cited native and Dart functions, small cited text files, and `INDEX.md`; text only |
 | `quark-scan.sh`               | runs Quark-Engine on a sample (`-n <name>`: `repaired.apk` when present) or APK paths; result cached in `tools/quark.json` (`tools/quark.failed` after a failure; `-f` reruns); `scan.sh` runs it |
 | `quark-leads.py`              | Quark-Engine matches (80%/100%, by calling method) as `quark-leads.txt`, app scope first; `scan.sh` runs it |
-| `model-leads.py`              | optional local-model reading list (`model-leads.txt`)                   |
+| `model-leads.py`              | experimental, off by default: local-model reading list (`model-leads.txt`) |
 | `blutter-build.sh`            | builds blutter for one Dart version; called by `./cupella` when needed      |
 
 Benchmarks ([benchmarks.md](benchmarks.md)): `fix-eval.py`, `bench-maleval.py`,
@@ -149,7 +149,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella lead-eval.py [-v] <name>                # lead files vs. the report's Findings
 ./cupella gate baseline; ./cupella gate           # rule loop
 ./cupella check [--no-gate]                       # regression run after script changes
-./cupella model-leads.py <name> [java-scope ...]  # optional; needs llav
+./cupella model-leads.py <name> [java-scope ...]  # experimental, off by default; needs llav
 ./cupella --llav <script> [args]                  # any script that imports llav_client
 ```
 
@@ -215,7 +215,11 @@ extraction, ELF and binary-XML reading) is Cupella's own Python standard-library
 `scripts/` (`dex.py`, `units.py`, `elf.py`, `apkunzip.py`, `axml2xml.py`, and the
 scripts that use them).
 
-## Local model
+## Local model (experimental, off by default)
+
+Experimental and off by default: no script, scan, gate, or check runs it; it runs only
+when invoked as below. It has added no coverage on any benchmark
+([further-work.md](further-work.md)).
 
 If a llav server runs on the host (`python3 -m llav --gguf <model> --host <gateway>
 --port 8080`), `./cupella model-leads.py` and `./cupella --llav <script>` reach it as

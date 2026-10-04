@@ -86,7 +86,7 @@ model are in [agent_docs/reference.md](agent_docs/reference.md).
 - [agent_docs/design-report.md](agent_docs/design-report.md): report structure and evidence rules. Read before writing or editing anything in `reports/`.
 - [agent_docs/gotchas.md](agent_docs/gotchas.md): traps in APK tooling and formats. Skim before trusting a tool's output or concluding that something is absent.
 - [agent_docs/harnesses.md](agent_docs/harnesses.md): what a coding agent harness must provide, and how Claude Code and others run the roles. Read when setting up a harness or when a subagent stage behaves differently than described.
-- [agent_docs/reference.md](agent_docs/reference.md): layout, scripts, commands, container, local model.
+- [agent_docs/reference.md](agent_docs/reference.md): layout, scripts, commands, container, the local model (experimental, off by default).
 - [agent_docs/benchmarks.md](agent_docs/benchmarks.md): public benchmarks, how to rerun them, current numbers. Read before changing scan patterns, scope, lead scripts, or runbook guidance.
 - [agent_docs/further-work.md](agent_docs/further-work.md): known gaps and next steps. Read before starting improvement work; update it when an item is done.
 

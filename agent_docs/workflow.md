@@ -89,8 +89,8 @@ analysis, or when the answer needs more than a few cited lines.
    were not decrypted"), run the decryption subagent below. After it,
    repeat stages 3 and 4 on each new `work/<name>.dec<k>/`, which
    `run-decryptor.sh` has already unpacked and scanned. Repeat for each further layer.
-6. **Optional: model reading list.** Only when the user asked for it or a llav server is
-   known to be running: `./cupella model-leads.py <name>`. See
+6. **Experimental, off by default: model reading list.** Never run it unless the user
+   asks for it: `./cupella model-leads.py <name>`. See
    [reference.md](reference.md) "Local model".
 7. **Write the report** in the format of [design-report.md](design-report.md), filling
    the skeleton written after stage 1 (see "Checkpoints"). Outside

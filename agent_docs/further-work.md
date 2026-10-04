@@ -263,7 +263,7 @@ From the agent benchmarks; each is small and testable on the same samples.
   It copies text verbatim, so secrets and indicators the report redacts are in it: a
   redaction pass (the report's own redacted values, URL defanging) before publishing is
   not built. `docs/examples/23282313-evidence/` is still the hand-picked set.
-- The model step (`model-leads.py`) adds ranking but no coverage on every benchmark so
+- The model step (`model-leads.py`, experimental, off by default) adds ranking but no coverage on every benchmark so
   far. Keep it optional; spend no more on it unless a benchmark shows a gap it fills.
   A larger instruction-tuned model, not a code-specialized one, is the variant worth
   trying if it is revisited.

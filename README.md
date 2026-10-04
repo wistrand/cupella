@@ -1,9 +1,7 @@
 # Cupella
 
-A workspace for static analysis of Android APKs with a coding agent. A cupel is the
-dish in a fire assay that absorbs the base metal and leaves the precious bead; Cupella
-strips packing, obfuscation, and noise until what the app really does is left. Nothing
-from a sample is ever executed.
+A workspace for static analysis of Android APKs with a coding agent.
+Project site: [wistrand.github.io/cupella](https://wistrand.github.io/cupella/).
 
 Drop an APK into `data/`, ask the agent to analyze it, and get a markdown report in
 `reports/`: what the app is, what it requests, which libraries and endpoints it
@@ -75,7 +73,7 @@ Then ask the agent, for example:
 | `bench/`   | benchmark data, fetched by `./bench-setup` (not in the repository) |
 | `bench-sources/` | where each benchmark file comes from, and its hash |
 | `agent_docs/` | runbooks, report format, traps, benchmarks, further work |
-| `docs/` | project site; `docs/examples/` holds an example report |
+| `docs/` | project site ([wistrand.github.io/cupella](https://wistrand.github.io/cupella/)); `docs/examples/` holds an example report |
 
 Signatures are verified during unpacking. The scripts also run on their own:
 
@@ -90,10 +88,10 @@ trackers and packers are identified (`trackers.txt`, `apkid.txt`), and Flutter a
 React Native apps get their compiled Dart or JavaScript code made readable. Two
 versions of an app can be compared with `./cupella apk-diff.py <old> <new>`, and
 `./cupella lead-eval.py <name>` checks which leads pointed at a finished report's findings.
-Optionally, a
-local model served by [llav](https://wistrand.github.io/llav/) can rank functions into
-a reading list (`./cupella model-leads.py <name>`). It has not found anything the rest
-missed.
+Experimental, off by default: a local model served by
+[llav](https://wistrand.github.io/llav/) can rank functions into a reading list
+(`./cupella model-leads.py <name>`). No script runs it unless you do, and it has not
+found anything the rest missed.
 
 Everything runs in a container. The image contains jadx, apktool, Ghidra, blutter, APKiD,
 hermes-dec, and Quark-Engine (with androguard) at pinned versions (full list:
@@ -157,7 +155,8 @@ claim before the citations are checked mechanically. The order of work is in
 `agent_docs/workflow.md`.
 
 Reports go to `reports/`, which is not part of the repository. One example is:
-[docs/examples/23282313-ddos-bot-loader.md](docs/examples/23282313-ddos-bot-loader.md),
+[docs/examples/23282313-ddos-bot-loader.md](docs/examples/23282313-ddos-bot-loader.md)
+([rendered on the site](https://wistrand.github.io/cupella/report.html?f=23282313-ddos-bot-loader.md)),
 a loader APK around a native DDoS bot that finds its server through blockchain name
 records (a snapshot from 2026-10-03; the signer's name is redacted).
 
