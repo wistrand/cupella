@@ -9,6 +9,10 @@
 # Steps:
 #   fixtures   fixtures/zipslip-test.sh, fixtures/injection-test.sh,
 #              fixtures/manifest-tricks-test.sh
+#   proposals  host/proposals-test.sh: ./cupella proposals and ./cupella workspaces on
+#              throwaway workspaces (listing, decisions, refusals, --find)
+#   try-proposal  host/try-proposal-test.sh: ./cupella try-proposal on a throwaway
+#              workspace under work/_check/ (runs, read-only sample, lint, refusals)
 #   native     builds scripts/fixtures/native-fixture.c with the host's clang and lld
 #              (our own source, no APK data) as plain, APS2-packed, and RELR variants
 #              into work/_check/native/, and checks native-summary.py --file,
@@ -26,9 +30,11 @@ gate=1
 case "${1:-}" in
   --no-gate) gate=0 ;;
   "") ;;
-  *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 out="$root/work/_check"
+# the proposals test leaves workspaces with read-only doc copies
+[ ! -d "$out" ] || chmod -R u+w "$out"
 rm -rf "$out"
 mkdir -p "$out/native"
 fails=0
@@ -42,6 +48,16 @@ for t in zipslip-test.sh injection-test.sh manifest-tricks-test.sh; do
   bad=$(grep -v '^  ' "$out/$t.txt" | grep -v 'unzip is not used' | grep -c 'FAIL' || true)
   if [ "$bad" = 0 ] && grep -q 'PASS' "$out/$t.txt"; then pass "fixtures/$t"; else fail "fixtures/$t (work/_check/$t.txt)"; fi
 done
+
+# proposals: listing and decisions across workspaces (host side, no container)
+host/proposals-test.sh "$out/proposals" > "$out/proposals.txt" 2>&1 || echo "FAIL: proposals-test.sh exited $?" >> "$out/proposals.txt"
+if ! grep -q '^FAIL' "$out/proposals.txt" && grep -q '^PASS' "$out/proposals.txt"; then pass "proposals"
+else fail "proposals (work/_check/proposals.txt)"; fi
+
+# try-proposal: host side, since the command starts its own container
+host/try-proposal-test.sh "$out/try-proposal" > "$out/try-proposal.txt" 2>&1 || echo "FAIL: try-proposal-test.sh exited $?" >> "$out/try-proposal.txt"
+if ! grep -q '^FAIL' "$out/try-proposal.txt" && grep -q '^PASS' "$out/try-proposal.txt"; then pass "try-proposal"
+else fail "try-proposal (work/_check/try-proposal.txt)"; fi
 
 # native fixture: what each script must report about it (fixed strings)
 summary_expect=(

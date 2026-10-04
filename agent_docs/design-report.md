@@ -87,8 +87,9 @@ What could not be determined statically, and what would resolve it.
 
 ## Method changes
 Scan patterns, script additions, or Quark-style rules this analysis added or proposed
-(in a workspace: the `proposals/` file), each with what it detects, the sample and code
-that showed the need, and the `./cupella gate` result or "not yet gated". "None" when
+(in a workspace: the `proposals/` file, and for a tool its `./cupella try-proposal`
+output under `work/<name>/proposals/<slug>/`), each with what it detects, the sample
+and code that showed the need, and the `./cupella gate` result or "not yet gated". "None" when
 the run added nothing.
 
 ## Outside references

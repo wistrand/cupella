@@ -221,7 +221,7 @@ Before telling the user a report is done:
   budget run and the Summary says so.
 - Traps that cost time are in [gotchas.md](gotchas.md), and ad hoc extractions that
   proved useful are in a script (see "Improving the scripts"); in a workspace, both are
-  in `proposals/<YYYY-MM-DD>.md` instead.
+  in `proposals/<YYYY-MM-DD>-<topic>.md` instead, one file per proposal.
 
 The reply to the user gives the report path, a few lines of what the app does, what
 could not be read, and the verification result. Do not repeat the report.
@@ -258,7 +258,7 @@ script covers:
    keep the change only on PASS.
 4. Check that past reports' findings are still pointed at: `./cupella lead-eval.py <name>`.
 5. After changes to extraction, `unpack.sh`, `elf.py`, or the injection scan, run
-   `./cupella check` (the fixtures, including the manifest tricks, the native fixture, and
+   `./cupella check` (the fixtures, including the manifest tricks, `proposals`, and `try-proposal`, the native fixture, and
    `cite-check.py` on every report, then the gate), and re-unpack one benign and one malformed sample with `-f`:
    a change in what jadx reads moved the Octo report's citations once.
 6. The gate measures leads, not every section: a new informational section (a triage
@@ -269,3 +269,19 @@ script covers:
    source.
 8. Update [further-work.md](further-work.md) when an item there is done, and
    [benchmarks.md](benchmarks.md) when an agent benchmark is rerun.
+
+In a workspace the scripts cannot be changed. Write the change as a proposal, one file
+each: `proposals/<slug>.md`, slug `<YYYY-MM-DD>-<topic>`, starting with a `# title`
+line. When it is an extraction, write it as `proposals/<slug>/tool.py` too (same slug)
+and run it with `./cupella try-proposal <slug> <name>`:
+it is linted like a decryptor and runs offline with the sample read-only, writing only
+`work/<name>/proposals/<slug>/`. Its output may be cited in the report like script
+output; say in "Method changes" that it comes from a proposal, not from `scripts/`. The
+user moves an accepted tool into `scripts/` in the checkout and runs the gate there.
+
+In the checkout, `./cupella proposals` lists the open proposals of every workspace made
+from it (`--all` adds applied and rejected ones), and
+`./cupella proposals set <workspace> <slug> applied|rejected|open [note]` records a
+decision in the checkout's `.cupella-decisions.tsv`, where a workspace agent cannot
+write it. Only the user, or an agent in the checkout on the user's word, records
+decisions.

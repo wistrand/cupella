@@ -18,9 +18,10 @@ apk=$(realpath "$apk")
 name=$(basename "$apk" .apk)
 out="$root/work/$name"
 # -f keeps agent work, which no script regenerates: decrypt/ (decryptor, notes, outputs),
-# progress/ (agent progress files), and scan-scope.txt (the agent's scope, reused by scan.sh)
+# proposals/ (output of proposal tools, cited by reports), progress/ (agent progress
+# files), and scan-scope.txt (the agent's scope, reused by scan.sh)
 prune() { # <sample dir>: remove everything but agent work
-  find "$1" -mindepth 1 -maxdepth 1 ! -name decrypt ! -name progress ! -name scan-scope.txt -exec rm -rf {} +
+  find "$1" -mindepth 1 -maxdepth 1 ! -name decrypt ! -name proposals ! -name progress ! -name scan-scope.txt -exec rm -rf {} +
 }
 if [ "$force" = 1 ] && [ -d "$out" ]; then
   prune "$out"
@@ -187,7 +188,7 @@ if [ "$force" = 1 ]; then
     awk -F'\t' -v c="$c" '$1 == c { f = 1 } END { exit !f }' "$out/embedded.txt" 2>/dev/null && continue
     prune "$d"
     rmdir "$d" 2>/dev/null && echo "removed stale child work/$c" \
-      || echo "stale child work/$c: kept only its agent work (decrypt/, progress/, scan-scope.txt)"
+      || echo "stale child work/$c: kept only its agent work (decrypt/, proposals/, progress/, scan-scope.txt)"
   done
 fi
 

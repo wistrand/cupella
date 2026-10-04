@@ -302,6 +302,11 @@ app, and malware is named by its public family (BTMOB, Octo).
   the decryption stage), and test fixtures. A cleanup in `stringfog.py` that removed the
   whole directory deleted the others' files on every rescan; the injection fixture
   caught it. Remove only files the script lists as its own (`jadx-strings/TABLES.txt`).
+- **Agent-written code runs from a read-only copy (verified, 2026-10-04).** A decryptor
+  or proposal tool that does `os.chdir(os.path.dirname(__file__))` lands in that copy
+  and fails with "Permission denied" on its first write. Use relative paths from the
+  working directory (`decrypt/`, or `work/<name>/proposals/<slug>/`). One decryptor from
+  2026-10-02 does this and no longer reruns.
 - **MobSF and Quark need help to run offline and read-only (verified).** MobSF writes
   migration files into its own code directory (run a copy on tmpfs) and downloads jadx
   on first use (`./cupella` gives it ours through `cache/`); Quark writes a dated log file

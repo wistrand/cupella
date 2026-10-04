@@ -129,8 +129,11 @@ From the agent benchmarks; each is small and testable on the same samples.
   (key, default) in one MalEval sample.
 - Workspaces: the copy-and-refresh design (2026-10-03) was tested function by function
   and through the wrapper, not by a full `./cupella setup --workspace` on a fresh
-  directory. Proposals in `proposals/` have no tooling yet; a command that lists them
-  across workspaces would help the review in the checkout.
+  directory. A proposed tool can be run on a sample from a workspace with
+  `./cupella try-proposal` (2026-10-04, tested in the checkout, not yet from a real
+  workspace; `./cupella check` covers it with `host/try-proposal-test.sh`).
+  `./cupella proposals` (2026-10-04) lists proposals across workspaces and records
+  decisions; workspaces made before it appear once they run `./cupella` again.
 - Checkpoints and budget mode (`workflow.md`) are written from one Codex run that ran
   out of tokens; neither has been used end to end yet.
 - The `decryptor` role's shell is limited by its instructions, not technically, in every

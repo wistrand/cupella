@@ -17,9 +17,10 @@
 # out/string-map.tsv exists (literal arguments of decoder calls -> plaintext), each
 # child's jadx sources get annotated copies in jadx-strings/ (scripts/annotate-strings.py).
 #
-# Safety: scripts/decryptor-lint.py rejects decryptors that could run code or reach
-# the network, and ./cupella executes the decryptor in a container where only
-# work/<name>/decrypt/ is writable and other samples and data/ are not mounted. The
+# Safety: scripts/run-agent-code.sh lints the decryptor (scripts/agent-code-lint.py
+# rejects code that could run code or reach the network), and ./cupella executes the
+# decryptor in a container where only work/<name>/decrypt/ is writable and other
+# samples and data/ are not mounted. The
 # lint is a filter; the container is the boundary. The decryptor runs from read-only
 # copies of the linted .py files, so it cannot rewrite a helper before importing it.
 # Before the unpack phase (which can write all of work/) writes anything, any link
@@ -37,17 +38,11 @@ dir="$root/work/$name/decrypt"
 [ -f "$dir/decrypt.py" ] || { echo "no $dir/decrypt.py: write the decryptor first" >&2; exit 1; }
 
 if [ "$phase" != unpack ]; then
-  # the decryptor was written by an agent that read malware: check it, then run it
-  # (./cupella gives this phase a container that can write only decrypt/)
-  python3 -B "$root/scripts/decryptor-lint.py" "$dir" || exit 1
+  # the decryptor was written by an agent that read malware: lint it, then run read-only
+  # copies with decrypt/ as the working directory (./cupella gives this phase a
+  # container that can write only decrypt/)
   mkdir -p "$dir/out"
-  # run read-only copies of what was linted; cwd stays decrypt/ for its relative paths
-  stage=$(mktemp -d "${TMPDIR:-/tmp}/decryptor.XXXXXX")
-  cp "$dir"/*.py "$stage"/
-  chmod 444 "$stage"/*.py && chmod 555 "$stage"
-  echo "== running work/$name/decrypt/decrypt.py"
-  (cd "$dir" && timeout 600 python3 -B -E -s "$stage/decrypt.py" < /dev/null) \
-    || { echo "decrypt.py failed (exit $?)" >&2; exit 1; }
+  "$root/scripts/run-agent-code.sh" "$dir" decrypt.py "$dir" || exit 1
   [ "$phase" = exec ] && exit 0
 fi
 
@@ -88,7 +83,7 @@ with zipfile.ZipFile(sys.argv[2], "w") as z, open(sys.argv[1], "rb") as f:
     new_sha=$(sha256sum "$dir/$child.apk" | cut -d' ' -f1)
     if [ -n "$old_sha" ] && [ "$old_sha" != "$new_sha" ]; then
       prev="$root/work/_previous/$child-${old_sha:0:12}"
-      for keep in decrypt progress scan-scope.txt; do
+      for keep in decrypt proposals progress scan-scope.txt; do
         [ -e "$root/work/$child/$keep" ] || continue
         mkdir -p "$prev" && mv "$root/work/$child/$keep" "$prev/"
         echo "   $child now holds a different payload: moved its $keep to work/_previous/$(basename "$prev")/"

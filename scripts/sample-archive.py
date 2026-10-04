@@ -103,6 +103,7 @@ def main():
     sys.exit("%s is an APK itself: run ./cupella unpack.sh on it (rename it to .apk in data/ first, the user's step)" % args[0])
   out_dir = os.path.join(ROOT, "work", "_samples")
   done = 0
+  written = set()
   with open(path, "rb") as fh:
     for info in infos[:200]:
       aes = aes_extra(info)
@@ -127,6 +128,12 @@ def main():
       if not base.lower().endswith(".apk"):
         base += ".apk"
       os.makedirs(out_dir, exist_ok=True)
+      # two members with one base name (in different folders of the archive) stay apart
+      stem, k = base[:-4], 1
+      while base in written:
+        k += 1
+        base = "%s-%d.apk" % (stem, k)
+      written.add(base)
       dest = os.path.join(out_dir, base)
       if os.path.islink(dest):
         os.unlink(dest)

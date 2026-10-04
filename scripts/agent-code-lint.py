@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Reject agent-written decryptors that could run code or reach the network.
+"""Reject agent-written code that could run other code or reach the network.
 
-A decryptor (work/<name>/decrypt/decrypt.py) is written by an agent that has just read
-malware, so it is checked before it runs: it must reimplement an algorithm, never
-load, interpret, or execute anything. Parsed with ast; nothing is imported or run.
+Agent-written code that reads APK data is written by an agent that has just read
+malware: a decryptor (work/<name>/decrypt/decrypt.py, run by run-decryptor.sh) or a
+proposal tool (proposals/<slug>/tool.py, run by ./cupella try-proposal). It is checked
+before it runs: it must reimplement an algorithm or read a format, never load,
+interpret, or execute anything. Parsed with ast; nothing is imported or run.
 
 This is a filter, not a sandbox: it rejects the usual ways to run code, and the
-container run-decryptor.sh uses (no network, only decrypt/ writable) is the boundary.
+container run-agent-code.sh runs in (no network, one writable directory) is the
+boundary.
 
 Allowed: a short list of standard-library modules for bytes, compression, hashes,
 formats, and files (ALLOWED_MODULES), and pycryptodome (Cryptodome, as Debian installs
@@ -25,19 +28,19 @@ Known limits: a path assembled at run time ("/pr" + "oc/...") passes the string 
 and a static check cannot follow every way Python reaches an attribute. That is why
 the container, not this lint, is the boundary.
 
-Local helper modules next to decrypt.py may be imported. Every .py file under the
-directory, in subdirectories too, is checked the same way; run-decryptor.sh then runs
-read-only copies of the top-level ones, so the decryptor cannot rewrite a helper
-before importing it.
+Local helper modules next to the entry file may be imported. Every .py file under the
+directory, in subdirectories too, is checked the same way; run-agent-code.sh then runs
+read-only copies of the top-level ones, so the code cannot rewrite a helper before
+importing it.
 
-Usage: scripts/decryptor-lint.py <decrypt-dir>     exit 1 with reasons when rejected
+Usage: scripts/agent-code-lint.py <code-dir>     exit 1 with reasons when rejected
 """
 import ast
 import sys
 
-# only what a decryptor needs: bytes, compression, hashes, formats, files. Each extra
+# only what agent code needs: bytes, compression, hashes, formats, files. Each extra
 # module is attack surface (typing, for one, evaluates annotation strings), so the list
-# follows what decryptors import, not what might be handy.
+# follows what decryptors and tools import, not what might be handy.
 ALLOWED_MODULES = {
   "base64", "binascii", "struct", "zlib", "gzip", "bz2", "lzma", "zipfile", "io", "os", "os.path", "sys",
   "re", "json", "hashlib", "hmac", "codecs", "string", "shutil", "collections", "itertools", "math", "array",
@@ -53,7 +56,7 @@ BANNED_ATTRS = {
   "system", "popen", "execv", "execve", "execvp", "execvpe", "execl", "execle", "execlp", "execlpe",
   "spawnv", "spawnve", "spawnvp", "spawnvpe", "spawnl", "spawnle", "spawnlp", "spawnlpe",
   "posix_spawn", "posix_spawnp", "startfile", "fork", "forkpty", "kill", "killpg",
-  # links and permissions (a link planted in decrypt/ would redirect later writes)
+  # links and permissions (a link planted in the output directory would redirect later writes)
   "symlink", "symlink_to", "link", "link_to", "hardlink_to", "chmod", "lchmod", "chown", "lchown",
   "copymode", "copystat", "chroot",
   # the import machinery
@@ -125,11 +128,11 @@ def main():
       continue
     problems += ["%s %s" % (f, p) for p in check(tree, local)]
   if problems:
-    print("decryptor rejected:")
+    print("agent code rejected:")
     for p in problems:
       print("  " + p)
     sys.exit(1)
-  print("decryptor lint: ok")
+  print("agent code lint: ok")
 
 
 if __name__ == "__main__":

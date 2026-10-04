@@ -72,7 +72,8 @@ conventions as of 2026-10; check them against its current docs.
 workspace files every harness needs (the doc copies, `WORKSPACE.md`, the `cupella` wrapper, the
 marker) and none of the Claude files. Because the workspace holds copies, not a link, a
 harness sandbox limited to the workspace (Codex `workspace-write`) can read every doc the
-agent needs; proposals go to the workspace's `proposals/`, inside the sandbox.
+agent needs; proposals go to the workspace's `proposals/`, inside the sandbox, and
+`./cupella try-proposal` runs a proposed tool from there.
 
 ## Known harness-specific behavior
 

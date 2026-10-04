@@ -9,3 +9,6 @@ __pycache__/
 # generated from roles/ by ./cupella setup
 /.claude/agents/
 /.idea/
+# workspaces made from this checkout and decisions on their proposals (./cupella proposals)
+/.cupella-workspaces
+/.cupella-decisions.tsv

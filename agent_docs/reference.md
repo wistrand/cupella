@@ -17,6 +17,7 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 |--------------------------|-------------------------------------------------------------------------|
 | `data/`                  | input APKs, read-only (mounted read-only in the container); any subdirectories; benchmark APKs in `data/ghera/`, `data/maleval/` (live malware), `data/vulnapps/`; gitignored |
 | `work/<name>/`           | derived output per APK, disposable, gitignored                          |
+| `work/<name>/decrypt/`, `work/<name>/proposals/<slug>/`, `work/<name>/progress/` | agent outputs, kept by `unpack.sh -f`: the decryption stage, proposal tool output, progress files |
 | `work/<name>.emb<k>/`, `work/<name>.dec<k>/` | child samples: payloads found by content or decrypted by script (`payload-decrypt.py`), and payloads decrypted by the decryption stage |
 | `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs, evidence bundles (`work/_evidence/<name>/`), APKs taken out of sample archives (`work/_samples/`) |
 | `reports/<name>.md`      | the analysis report, the only authored output per sample                |
@@ -25,13 +26,19 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 | `AGENTS.md`              | the instructions for any coding agent; `CLAUDE.md` imports it for Claude Code |
 | `roles/`                 | harness-neutral subagent roles: `reader` (no shell), `decryptor` (listed `./cupella` commands only) |
 | `.claude/agents/`        | Claude Code agent types `apk-reader`, `apk-decryptor`, generated from `roles/` by `./cupella setup` |
-| `cupella`                | wrapper: runs a script from `scripts/` in the container; also `setup` (first use, workspaces), `build`, `versions`, `shell`, `sync`, `gate`, `check`, `help` |
+| `cupella`                | wrapper: runs a script from `scripts/` in the container; also `setup` (first use, workspaces), `build`, `versions`, `shell`, `sync`, `try-proposal`, `proposals`, `workspaces`, `gate`, `check`, `help` |
+| `proposals/`             | in a workspace: one proposed script or doc change per file (`<slug>.md`, slug `<YYYY-MM-DD>-<topic>`), its tool if any (`<slug>/tool.py`), decisions on them are kept in the checkout (`.cupella-decisions.tsv`) |
+| `.cupella-workspaces`, `.cupella-decisions.tsv` | in the checkout: workspaces made from it (added by setup and by each workspace run) and the decisions on their proposals; read by `./cupella workspaces` and `./cupella proposals`; gitignored |
 | `bench-setup`            | fetches the benchmark datasets, checked against `bench-sources/` (host side; downloads and extraction only) |
 | `bench-sources/`         | source and hash of every benchmark file; never shown to analysis agents |
 | `docs/`                  | the project web site (static, GitHub Pages: serve from `docs/`); not agent documentation, which is `agent_docs/` |
 | `.claude/settings.json`  | project permission rules: `./cupella` allowed, host parsing tools and `adb` denied |
 | `.cupella-workspace`     | marks a workspace made by `./cupella setup --workspace` and records the checkout path, the harness, and a stamp of the copied docs. A workspace has its own `data/`, `work/`, `reports/`, `proposals/`; read-only copies of `AGENTS.md`, `agent_docs/`, `prompts/`, `roles/`; `WORKSPACE.md`; a `cupella` wrapper; for Claude Code also `CLAUDE.md`, `.claude/settings.json`, and agent types. Every `./cupella` run there refreshes the copies when the checkout changed |
 | `host/gate.sh`           | benchmark gate for rule changes, run as `./cupella gate baseline`, then `./cupella gate` |
+| `host/workspaces.sh`     | `./cupella workspaces`: the workspaces made from this checkout with their APK, report, and open-proposal counts; `--find DIR` adds older ones |
+| `host/proposals.sh`      | `./cupella proposals`: lists workspace proposals with their state, records decisions in the checkout's `.cupella-decisions.tsv` (never in a workspace, so an agent there cannot mark its own proposals) |
+| `host/proposals-test.sh` | checks `./cupella proposals` and `./cupella workspaces` on throwaway workspaces with their own registry; run by `./cupella check` |
+| `host/try-proposal-test.sh` | checks `./cupella try-proposal` on a throwaway workspace (tool runs, sample and code read-only, lint, refused names and links); run by `./cupella check` |
 | `host/check.sh`          | regression run after script changes, run as `./cupella check [--no-gate]`: fixtures, native fixture (built with the host's clang), `cite-check.py` on every report, gate |
 | `Dockerfile`             | the analysis image; tool versions pinned here                           |
 | `bench/`                 | benchmark metadata and answer keys; gitignored; never shown to analysis agents |
@@ -85,7 +92,8 @@ On demand:
 | `apk-diff.py`                 | changes between two unpacked APKs                                       |
 | `reference-check.py`          | compares native libraries with official builds and pub.dev sources (network) |
 | `run-decryptor.sh`            | lints and runs an agent-written decryptor locked down, then unpacks and scans its outputs as `.dec<k>` (not `out/parts/`), annotates strings, removes stale children |
-| `decryptor-lint.py`           | rejects decryptors that could run code or reach the network             |
+| `agent-code-lint.py`          | rejects agent-written code (decryptors, proposal tools) that could run code or reach the network |
+| `run-agent-code.sh`           | lints and runs agent-written Python with read-only copies and one writable working directory; used by `run-decryptor.sh` and `./cupella try-proposal` |
 | `cite-check.py`               | checks a report's citations against `work/`                             |
 | `lead-eval.py`                | scores lead files against the functions a report's Findings cite        |
 | `evidence-bundle.py`          | collects what a report cites into `work/_evidence/<name>/`: excerpts of the cited lines, cited native and Dart functions, small cited text files, and `INDEX.md`; text only |
@@ -143,6 +151,10 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella apk-diff.py <old> <new> > work/<new>/diff-from-<old>.txt
 ./cupella reference-check.py <name> > work/<name>/reference-check.txt   # NETWORK
 ./cupella run-decryptor.sh <name>                 # decryption stage
+./cupella try-proposal <slug> <name> [args]       # proposals/<slug>/tool.py on one sample -> work/<name>/proposals/<slug>/
+./cupella workspaces [--find DIR ...]             # workspaces made from this checkout, with counts
+./cupella proposals [--all] [workspace ...]        # open (or all) proposals of every workspace
+./cupella proposals set <ws> <slug> applied|rejected|open [note]   # record a decision (checkout only)
 ./cupella sample-archive.py data/<file>.zip        # a sample that came as a password-protected archive: APK to work/_samples/
 ./cupella cite-check.py <name>                    # before finishing a report
 ./cupella evidence-bundle.py <name>               # for a report to be published: the cited lines as work/_evidence/<name>/
@@ -170,6 +182,8 @@ exist inside the container. Output redirection (`> work/...`) happens on the hos
 Mount exceptions: `cite-check.py` and `lead-eval.py` also see `reports/`, and
 `bench-*.py` see `bench/`, both read-only. `run-decryptor.sh` runs the decryptor with
 only that sample's directories mounted, read-only except its `decrypt/`.
+`./cupella try-proposal` mounts the same, read-only except `work/<name>/proposals/<slug>/`,
+plus the tool's `proposals/<slug>/` read-only.
 
 Everything runs with `--network none` except:
 
@@ -198,7 +212,7 @@ Inside the image, pinned in `Dockerfile` (`./cupella versions` prints what was b
 | capstone (`cstool`)                          | Debian package                                      | `native-disasm.py`; libcapstone also for the blutter build                       |
 | binutils                                     | Debian package                                      | `scan.sh` (`strings` on `resources.arsc`)                                        |
 | openssl                                      | Debian package                                      | `apksig-verify.py` (signature certificates)                                      |
-| pycryptodome                                 | Debian package                                      | agent-written decryptors (the one crypto module `decryptor-lint.py` allows)      |
+| pycryptodome                                 | Debian package                                      | agent-written decryptors and proposal tools (the one crypto module `agent-code-lint.py` allows)      |
 | OpenJDK 21                                   | Debian package                                      | runs jadx, apktool, Ghidra                                                       |
 | cmake, ninja, g++, ICU, pyelftools, requests | Debian packages                                     | the blutter build and blutter itself, not Cupella's scripts                      |
 
