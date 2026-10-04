@@ -79,7 +79,8 @@ with zipfile.ZipFile(sys.argv[2], "w") as z, open(sys.argv[1], "rb") as f:
     echo "== $rel ($kind): unpacking as $child"
     # agent work kept by unpack.sh -f belongs to the payload it was done on: when this
     # number now holds a different payload, move that work aside instead of mixing it in
-    old_sha=$(sed -n 's/^sha256: *//p' "$root/work/$child/triage.txt" 2> /dev/null | head -1)
+    # || true: no triage.txt yet (first unpack) fails sed, and pipefail would end the script
+    old_sha=$(sed -n 's/^sha256: *//p' "$root/work/$child/triage.txt" 2> /dev/null | head -1 || true)
     new_sha=$(sha256sum "$dir/$child.apk" | cut -d' ' -f1)
     if [ -n "$old_sha" ] && [ "$old_sha" != "$new_sha" ]; then
       prev="$root/work/_previous/$child-${old_sha:0:12}"
