@@ -7,7 +7,8 @@
 #   ./cupella check --no-gate  skip the gate (it rescans the benchmarks: minutes)
 #
 # Steps:
-#   fixtures   fixtures/zipslip-test.sh, fixtures/injection-test.sh
+#   fixtures   fixtures/zipslip-test.sh, fixtures/injection-test.sh,
+#              fixtures/manifest-tricks-test.sh
 #   native     builds scripts/fixtures/native-fixture.c with the host's clang and lld
 #              (our own source, no APK data) as plain, APS2-packed, and RELR variants
 #              into work/_check/native/, and checks native-summary.py --file,
@@ -36,7 +37,7 @@ fail() { echo "FAIL  $1"; fails=$((fails + 1)); }
 skip() { echo "SKIP  $1"; }
 
 # fixtures: each prints PASS or FAIL per case; indented lines are detail
-for t in zipslip-test.sh injection-test.sh; do
+for t in zipslip-test.sh injection-test.sh manifest-tricks-test.sh; do
   ./cupella "fixtures/$t" > "$out/$t.txt" 2>&1 || echo "FAIL: $t exited $?" >> "$out/$t.txt"
   bad=$(grep -v '^  ' "$out/$t.txt" | grep -v 'unzip is not used' | grep -c 'FAIL' || true)
   if [ "$bad" = 0 ] && grep -q 'PASS' "$out/$t.txt"; then pass "fixtures/$t"; else fail "fixtures/$t (work/_check/$t.txt)"; fi

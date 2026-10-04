@@ -69,9 +69,12 @@ def files(work, scopes):
   src = os.path.join(work, "jadx", "sources")
   ann = os.path.join(work, "jadx-strings")
   seen = set()
+  inside = tuple("" if sc in (".", "") else sc.strip("/") + "/" for sc in scopes)
   if os.path.isdir(ann):  # annotated copies first: they hold the decrypted names
     for p in glob.glob(os.path.join(ann, "**", "*.java"), recursive=True):
       rel = os.path.relpath(p, ann)
+      if not rel.startswith(inside):
+        continue  # a library class with decoded strings: outside the scope, as its source is
       seen.add(rel)
       yield "jadx-strings/" + rel, p
   for sc in scopes:

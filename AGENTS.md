@@ -55,6 +55,7 @@ verification, and writes `reports/` (and docs, in the checkout).
 
 ```bash
 ./cupella setup [--workspace DIR]               # the user runs this once: image, directories, self-test
+./cupella sample-archive.py data/<file>.zip     # only for a sample in a password-protected archive: APK to work/_samples/
 ./cupella unpack.sh data/<path>/<name>.apk      # always first
 ./cupella scan.sh <name>                        # always second
 ./cupella cite-check.py <name>                  # before finishing any report

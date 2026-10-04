@@ -95,3 +95,8 @@ agent needs; proposals go to the workspace's `proposals/`, inside the sandbox.
   Keep prompts short and neutral (paths, function names, questions; no paraphrase of
   what the malware does), never resend a stopped prompt reworded, and report the area
   as not read or read it at the capability level from strings and structure leads.
+- The classifier has also stopped readers at the very end, while they wrote their final
+  summary of a banking trojan's SMS and command code (two of four readers, 2026-10-04):
+  the reading was done and only the summary was lost. Readers now write each finding
+  to `work/<name>/progress/<role>-findings.md` as they confirm it and end with a
+  one-line message (`prompts/read-area.md`).

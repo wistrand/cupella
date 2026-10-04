@@ -17,7 +17,7 @@
   .report table { min-width: 0; font-size: 14px; }
   .report th, .report td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
   .report blockquote { margin: 16px 0; padding: 8px 16px; border-left: 3px solid var(--accent); background: var(--accent-soft); }
-  .report .mermaid { background: #fff; border-radius: 6px; padding: 12px; overflow-x: auto; margin: 12px 0; }
+  .report .mermaid { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow-x: auto; margin: 12px 0; }
   .table-scroll { overflow-x: auto; }
 </style>
 </head>
@@ -136,13 +136,42 @@ function validPath(f) {
     t.parentNode.insertBefore(w, t); w.appendChild(t);
   });
   const blocks = out.querySelectorAll("pre code.language-mermaid");
+  const diagrams = [];
+  let serial = 0;
   blocks.forEach(c => {
     const d = document.createElement("div"); d.className = "mermaid";
-    d.textContent = c.textContent;
+    diagrams.push([d, c.textContent]);
     c.parentNode.replaceWith(d);
   });
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
-  try { await mermaid.run({ querySelector: ".report .mermaid" }); } catch (e) { console.error(e); }
+  // Diagram colors come from the page's tokens in style.css (hex values, which is all the
+  // "base" theme takes), so they follow light and dark mode; drawn again when it changes.
+  async function draw() {
+    const css = getComputedStyle(document.documentElement);
+    const v = name => css.getPropertyValue(name).trim();
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({
+      startOnLoad: false, securityLevel: "strict", theme: "base",
+      themeVariables: {
+        darkMode: dark, background: v("--panel"), fontFamily: v("--sans"),
+        primaryColor: v("--bg"), primaryTextColor: v("--fg"), primaryBorderColor: v("--muted"),
+        secondaryColor: v("--accent-soft"), secondaryTextColor: v("--fg"), secondaryBorderColor: v("--accent"),
+        tertiaryColor: v("--code-bg"), tertiaryTextColor: v("--fg"), tertiaryBorderColor: v("--line"),
+        lineColor: v("--muted"), textColor: v("--fg"), mainBkg: v("--bg"), nodeBorder: v("--muted"),
+        clusterBkg: v("--code-bg"), clusterBorder: v("--line"), titleColor: v("--fg"),
+        edgeLabelBackground: v("--panel"),
+      },
+    });
+    // rendered one by one under ids of our own: mermaid.run names each SVG after the
+    // clock, and two diagrams drawn in the same millisecond then share an id and styles
+    for (const [d, src] of diagrams) {
+      try { d.innerHTML = (await mermaid.render("diagram-" + (++serial), src)).svg; }
+      catch (e) { console.error(e); d.textContent = src; }
+    }
+  }
+  // one drawing at a time: two overlapping runs put one diagram's nodes into another
+  let last = draw();
+  if (diagrams.length) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { last = last.then(draw); });
+  await last;
 })();
 </script>
 </body>

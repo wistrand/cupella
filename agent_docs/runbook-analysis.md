@@ -36,6 +36,20 @@ report during an analysis (`AGENTS.md` Invariants).
 ./cupella unpack.sh data/<name>.apk
 ```
 
+When the sample is a password-protected archive instead of an APK (malware repositories
+hand out `<sha256>.zip`), take the APK out first:
+
+```bash
+./cupella sample-archive.py data/<file>.zip        # lists the members; extracts APKs to work/_samples/
+./cupella unpack.sh work/_samples/<name>.apk
+```
+
+It tries one password, "infected", the convention of those repositories, and handles
+ZipCrypto and WinZip AES. For another password use `--password <text>`, given by the
+user; never guess passwords, and never extract with host tools or write to `data/`.
+Check that the printed sha256 is the one the file is named after, and say in the
+report's Identity that the APK came out of an archive.
+
 `scripts/unpack.sh` (run in the container by `./cupella`) produces:
 
 | Output                 | From                          | Use                                              |
@@ -66,7 +80,11 @@ say so under "Analysis coverage".
 - "ZIP anomalies": the APK is malformed on purpose (fake encryption flags, entries
   that shadow real files, symlink entries, entries over the decompression limits).
   apktool and jadx then read `repaired.apk`. Name the technique in the report as
-  anti-analysis; an entry over the limits is a decompression bomb aimed at tools.
+  anti-analysis; an entry over the limits is a decompression bomb aimed at tools. A
+  manifest stored with an unknown compression method and a false compressed size is
+  read in full by `apkunzip.py`; other tools (APKiD among them) see a truncated or
+  unreadable file. `manifest-summary.txt` "Manifest anomalies" lists tampering inside
+  the binary XML (nameless elements, attributes without namespace, `tag=""` padding).
 - "Tool time limits reached": that tool's output is partial. Name it under "Analysis
   coverage".
 - "Class coverage": classes jadx did not produce (read them with `dex-disasm.py`),
@@ -216,6 +234,8 @@ Working through it:
   instructions), use `./cupella dex-disasm.py <name> <Class[.method]>`: it decodes along
   the control flow and skips the junk that packers put in dead code, which also
   breaks baksmali (`apktool.log`: "Error occurred while disassembling class").
+  In Kotlin code most failures are in `invokeSuspend` of a suspend lambda
+  (`Outer$method$1$1`); `jadx-retry/` has that class in a directory of its own.
 
 ## Vulnerability checklist
 
@@ -349,6 +369,12 @@ What the MalEval runs (20 families, see [benchmarks.md](benchmarks.md)) showed:
   in 29 of 230 malware samples and none of the 25 benign apps. The line is a lead: read
   the code at the key's place before reporting how the payload is loaded. "Files that
   look encrypted and were not decrypted" lists what is left for the decryption stage.
+- Before starting the decryption stage on a file from that list, find the code that
+  opens it. A key the app fetches from its server at run time (a `SecretKeySpec` built
+  from a response field, assets named `*.enc` served to a WebView) cannot be recovered
+  statically: report the mechanism, the endpoint, and the files as not readable, and do
+  not start a decryptor. Seen on an SMS stealer whose phishing pages were all such
+  assets (2026-10-04).
 - Encrypted payloads and string tables were the main cause of missed behaviors. Run
   the decryption stage ([workflow.md](workflow.md) "Subagent stages"): an
   agent with the `decryptor` role and `prompts/decrypt.md` finds the routine (a "[XOR or cipher on the way]" flow from an asset, a decoder in

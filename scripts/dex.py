@@ -296,6 +296,59 @@ class Dex:
     return out
 
 
+def constants(raw, min_len=1, max_len=512):
+  """({string: where}, {byte array: where}) of the dex files in directory raw that
+  Android loads (classes*.dex): string constants, and byte arrays filled from
+  fill-array-data, each with a note saying where it is. What a decryption key can be."""
+  import os
+  import re
+  strings, arrays = {}, {}
+  for f in sorted(os.listdir(raw)) if os.path.isdir(raw) else []:
+    if not re.match(r"classes\d*\.dex$", f):
+      continue
+    with open(os.path.join(raw, f), "rb") as fh:
+      buf = fh.read()
+    if buf[:4] != b"dex\n":
+      continue
+    try:
+      d = Dex(buf)
+      for i in range(d.s_n):
+        try:
+          s = d.string(i)
+        except (ValueError, IndexError, struct.error):
+          continue
+        if min_len <= len(s) <= max_len:
+          strings.setdefault(s, "string in %s" % f)
+      for _cls, data, _s, _i in d.classes():
+        for idx, code in d.methods_of(data):
+          if not code:
+            continue
+          try:
+            (n,) = struct.unpack_from("<I", buf, code + 12)
+            base, pc = code + 16, 0
+            while pc < n:
+              unit = struct.unpack_from("<H", buf, base + 2 * pc)[0]
+              op = unit & 0xFF
+              if op == 0 and unit in (0x0100, 0x0200, 0x0300):
+                if unit == 0x0300:
+                  width, size = struct.unpack_from("<HI", buf, base + 2 * pc + 2)
+                  if width == 1 and 4 <= size <= 256:
+                    arr = buf[base + 2 * pc + 8:base + 2 * pc + 8 + size]
+                    arrays.setdefault(arr, "byte array in %s" % d.method(idx)[4])
+                  pc += (size * width + 1) // 2 + 4
+                elif unit == 0x0100:
+                  pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 2 + 4
+                else:
+                  pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 4 + 2
+                continue
+              pc += WIDTH[op]
+          except (struct.error, IndexError, ValueError):
+            continue
+    except (struct.error, IndexError, ValueError):
+      continue
+  return strings, arrays
+
+
 PROBLEMS = []  # (dex path, class, reason) for what load() skipped or cut short
 
 

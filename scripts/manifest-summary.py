@@ -52,23 +52,62 @@ def filter_lines(f):
 def main():
   name = sys.argv[1]
   root_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "work", name)
-  path = os.path.join(root_dir, "apktool", "AndroidManifest.xml")
-  if not os.path.exists(path):
-    path = os.path.join(root_dir, "manifest.xml")
-  if not os.path.isfile(path) or not os.path.getsize(path):
+  m, path, notes = None, None, []
+  for rel in ("apktool/AndroidManifest.xml", "manifest.xml", "jadx/resources/AndroidManifest.xml"):
+    cand = os.path.join(root_dir, rel)
+    if not os.path.isfile(cand):
+      continue
+    with open(cand, errors="replace") as fh:
+      text = fh.read()
+    if "<manifest" not in text:
+      continue
+    try:
+      m, path = ET.fromstring(text), cand
+      break
+    except ET.ParseError as ex:
+      # an element whose name is an empty string comes out as "< attr=...>": read it as <_>
+      fixed = re.sub(r"</\s*>", "</_>", re.sub(r"<(\s)", r"<_\1", text))
+      try:
+        m, path = ET.fromstring(fixed), cand
+        notes.append("%s is not well-formed XML (%s): elements without a name are read as <_>" % (rel, ex))
+        break
+      except ET.ParseError as ex2:
+        notes.append("%s could not be parsed (%s)" % (rel, ex2))
+  if m is None:
+    if os.path.isfile(os.path.join(root_dir, "raw", "AndroidManifest.xml")):
+      print("AndroidManifest.xml is in the APK but no tool decoded it (malformed binary XML is an")
+      print("anti-analysis technique): permissions and components are unknown, not absent.")
+      for n in notes:
+        print("- " + n)
+      return
     parent = re.match(r"(.+)\.(?:dec|emb)\d+$", name)
     print("No AndroidManifest.xml in this sample (dex only).")
     if parent:
       print("A child sample without a manifest runs inside its parent's process, with the parent's")
       print("permissions and native libraries: see work/%s/manifest-summary.txt." % parent.group(1))
     return
-  m = ET.parse(path).getroot()
   app = m.find("application")
   sdk = m.find("uses-sdk")
   target = int(attr(sdk, "targetSdkVersion", "0")) if sdk is not None else 0
 
   print("# Manifest summary: %s" % name)
   print("source: %s" % os.path.relpath(path, os.path.join(root_dir, "..", "..")))
+  odd = sorted({el.tag for el in m.iter() if el.tag == "_" or not re.match(r"^[A-Za-z][\w.-]*$", el.tag)})
+  junk = {}
+  for el in m.iter():
+    for k, v in el.attrib.items():
+      if v == "" and k.split("}")[-1] not in ("taskAffinity", "label", "value", "sharedUserId"):
+        junk[k.split("}")[-1]] = junk.get(k.split("}")[-1], 0) + 1
+  junk = [(k, cnt) for k, cnt in sorted(junk.items(), key=lambda kv: -kv[1])[:5] if cnt >= 5]
+  if notes or odd or junk:
+    print("\n## Manifest anomalies (tampering aimed at decoders; Android reads elements and attributes by id)")
+    for n in notes:
+      print("- " + n)
+    if odd:
+      print("- elements with an empty or invalid name: %d (%s)" % (
+        sum(1 for el in m.iter() if el.tag in odd), ", ".join(repr(t) for t in odd[:5])))
+    for k, cnt in junk:
+      print("- attribute %s=\"\" on %d elements (padding)" % (k, cnt))
   print("package: %s" % m.get("package"))
   if not target:
     print("targetSdkVersion not in this manifest (apktool keeps it in apktool.yml)")

@@ -47,6 +47,26 @@ app, and malware is named by its public family (BTMOB, Octo).
 - **Element text matters in config XML (verified).** Network security config puts the
   domain names in text nodes, not attributes. A decoder that prints only attributes
   shows `domain-config` blocks with no domains.
+- **A stored ZIP entry with a false compressed size truncates the manifest (verified,
+  fixed).** `AndroidManifest.xml` with a compression method that is neither 0 nor 8 and a
+  compressed size smaller than the data: Android reads it as stored, at the uncompressed
+  size. `apkunzip.py` trusted the compressed size until 2026-10-03 and wrote the first
+  4,094 of 11,700 bytes; `axml2xml.py` then printed an empty document without an error,
+  the triage said "INTERNET: not requested", `manifest-summary.txt` was empty, and the
+  scan scope fell back to everything. Signs of a manifest that was not read: no
+  `<manifest` in `manifest.xml`, a `manifest-note.txt`, "INTERNET: unknown" in the triage.
+  Never conclude anything from an empty manifest: check that jadx or apktool decoded one.
+  `./cupella fixtures/manifest-tricks-test.sh` builds a synthetic APK with this trick and the
+  tampering below; `axml2xml.py` now exits with an error when it decodes no element.
+- **Manifests are tampered for decoders, not for Android (verified).** Android reads
+  elements and attributes by resource id. Seen in one sample: an element with an empty
+  name (apktool writes `< android:name=...>`, which is not XML), attributes without
+  their namespace (`name=` for `android:name=`; `axml2xml.py` now names them by resource
+  id), a `tag=""` attribute on every element, and resource names made of the Hangul
+  filler character. `manifest-summary.txt` lists these under "Manifest anomalies".
+- **"declares: AccessibilityService" in the triage is a text match (verified).** It also
+  fires on a `<queries>` entry for that action, in an app that declares no such service.
+  Read `manifest-summary.txt` for the components.
 - **Not every `.apk`-like file is a single APK.** `.xapk`, `.apks`, `.apkm` are zips
   holding a base APK plus splits. A lone `base.apk` from a split install lacks the
   native libraries and density/language resources, so "no native code" may be wrong.
@@ -54,6 +74,19 @@ app, and malware is named by its public family (BTMOB, Octo).
   (`requiredSplitTypes`, `isSplitRequired`, `com.android.vending.splits.required`); for a
   Flutter app it means the Dart code (`libapp.so`) is in the ABI split and not analyzable
   from the base (4 MalEval samples).
+- **Number-table strings come in two call shapes (verified).** The "np" protector stores
+  each string as a slice of a per-class `short[]` XORed with a key. One sample called a
+  shared decoder, `decode(table, offset, length, key)`, from the app's classes and a
+  private `NAME(start, end, key)` from library classes; the next used only the second,
+  in every class of the APK (41,548 calls). `stringfog.py` decodes both and picks the
+  argument layout per shape. A method jadx could not decompile keeps its strings hidden
+  (the decoder reads the jadx text): read it in `jadx-retry/` or with `dex-disasm.py`.
+- **Printable output does not prove a key (verified).** Searching the dex constants for
+  a string decoder's XOR key "found" keys on two samples whose output was printable noise
+  (`tue^cb&~v<`): structured ciphertext XORed with an ASCII key is mostly printable.
+  `stringfog.py` does not search XOR keys, and accepts a searched key only when the
+  results read like names and messages. `payload-decrypt.py` has no such problem: a
+  wrong key cannot produce a dex with a matching header or a ZIP that opens.
 - **A script-decrypted payload and an agent-decrypted one can be the same file.**
   `payload-decrypt.py` (since 2026-10-03) unpacks what it decrypts as `.emb<k>`; a sample
   analyzed before that has the same payload as `.dec<k>` from the decryption stage
@@ -166,6 +199,12 @@ app, and malware is named by its public family (BTMOB, Octo).
   baksmali skips the class ("Invalid element width"). ART never executes those bytes.
   `./cupella dex-disasm.py` decodes along the control flow and reads them fine; the
   `flows.py` and `structure-leads.py` decoders also read past them.
+- **Kotlin coroutine code hides the chain in suspend lambdas (verified, 2026-10-04).**
+  The work of a suspend function is in `invokeSuspend` of a class jadx prints as
+  `AnonymousClass1` or `C0805`; the outer method only creates it. A behavior map shows
+  `create`, `invoke`, and `invokeSuspend` nodes under the outer class's name and may
+  stop there. Read the `invokeSuspend` body, and when jadx failed on it, the
+  `jadx-retry/` rendering or `./cupella dex-disasm.py <name> '<Outer$method$1>'`.
 - **Case-insensitive name clashes** from obfuscators (`a.java` and `A.java`) are not a
   problem on Linux but make output unusable if `work/` is copied to macOS or Windows.
 
@@ -258,6 +297,11 @@ app, and malware is named by its public family (BTMOB, Octo).
 
 ## Shell and scripts
 
+- **Never clear a directory that several scripts write (verified, 2026-10-04).**
+  `jadx-strings/` holds copies from `stringfog.py`, `annotate-strings.py` (also run by
+  the decryption stage), and test fixtures. A cleanup in `stringfog.py` that removed the
+  whole directory deleted the others' files on every rescan; the injection fixture
+  caught it. Remove only files the script lists as its own (`jadx-strings/TABLES.txt`).
 - **MobSF and Quark need help to run offline and read-only (verified).** MobSF writes
   migration files into its own code directory (run a copy on tmpfs) and downloads jadx
   on first use (`./cupella` gives it ours through `cache/`); Quark writes a dated log file
@@ -526,6 +570,15 @@ app, and malware is named by its public family (BTMOB, Octo).
   blutter writes every class into `asm/<app>/main.dart` (47,000 lines for the Flutter app),
   although `flutter-summary.txt` lists 49 source files. Use `dart/INDEX.txt` and
   `dart-index.py --func`, never read the file top to bottom.
+- **A host `grep` can print nothing for a jadx file that has matches (verified,
+  2026-10-04).** Kotlin `@Metadata` strings and number tables put control characters
+  in the file; `grep` then treats it as binary and, with other output piped, the
+  "binary file matches" line is easy to miss. Use `grep -a`. Seen on a 208 KB
+  `DeviceManager.java`: an empty method list from a file with 40 methods.
+- **An activity with MAIN and category INFO but no LAUNCHER has no icon and can still
+  be started by name (verified, 2026-10-04).** `getLaunchIntentForPackage` looks for
+  category INFO first. Droppers install payloads built this way and start them; do not
+  write "no way to start it" from the missing LAUNCHER category.
 - **Strings may not be literal.** Obfuscators encrypt strings or assemble them from
   char arrays; "no URL found by grep" is weak evidence. Look for a small static
   decrypt method called with byte arrays or integers all over the code.

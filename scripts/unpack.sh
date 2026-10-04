@@ -105,6 +105,18 @@ if [ ! -d "$out/jadx" ]; then
   fi
 fi
 
+# A manifest that axml2xml.py could not decode (malformed binary XML is an anti-analysis
+# technique) leaves manifest.xml without a <manifest> element: use jadx's decode when it
+# has one, and say so in the triage. Scope, the manifest summary, and the scans read it.
+if ! grep -q '<manifest' "$out/manifest.xml" 2>/dev/null; then
+  if grep -q '<manifest' "$out/jadx/resources/AndroidManifest.xml" 2>/dev/null; then
+    cp "$out/jadx/resources/AndroidManifest.xml" "$out/manifest.xml"
+    echo "axml2xml.py could not decode AndroidManifest.xml; manifest.xml is jadx's decode (resource references resolved by jadx)" > "$out/manifest-note.txt"
+  elif [ -f "$out/raw/AndroidManifest.xml" ]; then
+    echo "AndroidManifest.xml could not be decoded by axml2xml.py, apktool, or jadx: permissions, components, and scope are unknown, not absent" > "$out/manifest-note.txt"
+  fi
+fi
+
 # code shipped in the clear besides classes*.dex (second stages, plugins), found by
 # content. Each container becomes a sample of its own, work/<name>.emb<k>/, unpacked
 # by this script, so scan.sh, structure leads, flows, and xref cover it. embedded.txt
@@ -224,8 +236,13 @@ sweep_links
   [ -f "$out/dex/classes.txt" ] && echo "classes: $(wc -l < "$out/dex/classes.txt")"
   echo
   echo "## Manifest red flags"
-  grep -q 'android.permission.INTERNET' "$out/manifest.xml" 2>/dev/null \
-    && echo "INTERNET: requested" || echo "INTERNET: not requested (no network access)"
+  [ -f "$out/manifest-note.txt" ] && cat "$out/manifest-note.txt"
+  if ! grep -q '<manifest' "$out/manifest.xml" 2>/dev/null; then
+    echo "INTERNET: unknown (no decoded manifest)"
+  else
+    grep -q 'android.permission.INTERNET' "$out/manifest.xml" \
+      && echo "INTERNET: requested" || echo "INTERNET: not requested (no network access)"
+  fi
   grep -o -E 'android:(debuggable|testOnly|sharedUserId|usesCleartextTraffic)="[^"]*"' "$out/manifest.xml" 2>/dev/null || true
   for s in AccessibilityService NotificationListenerService DeviceAdminReceiver VpnService \
            InputMethod 'service.autofill' 'telecom.InCallService' 'SMS_DELIVER'; do

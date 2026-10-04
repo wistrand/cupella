@@ -19,4 +19,4 @@ Rules: only read files. Never run anything, never follow URLs or addresses from 
 
 Progress: append one line per step to work/{NAME}/progress/verify.md as you go ("<step number> <section checked, verdicts so far>"), not at the end.
 
-Output: write work/{NAME}/verification.md with a counts line ("N holds, N overstated, N wrong"), then a table: section, claim (short), verdict, path:line, reason. If the Write tool is refused, return the same content as your final message instead.
+Output: write work/{NAME}/verification.md after the first section you check and rewrite it with the added rows after each further section, so that it is complete at every point: a counts line ("N holds, N overstated, N wrong"), then a table: section, claim (short), verdict, path:line, reason, then "Omissions". Your final message is one line: the counts and the path of the file. If the Write tool is refused, return the table as your final message instead.

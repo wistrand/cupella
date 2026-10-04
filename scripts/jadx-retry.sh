@@ -16,6 +16,10 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 tools=${APK_TOOLS:?not in the analysis container: run this as ./cupella jadx-retry.sh ...}
 out="$root/work/$name"
 apk=$(find "$root/data" -name "$name.apk" -type f | head -n 1)  # data/ may have subdirectories
+if [ -z "$apk" ] && [ -d "$root/work/_samples" ]; then
+  # an APK that sample-archive.py took out of a sample archive
+  apk=$(find "$root/work/_samples" -name "$name.apk" -type f | head -n 1)
+fi
 if [ -z "$apk" ] && [[ "$name" == *.emb* ]]; then
   # an embedded payload: unpack.sh keeps its copy in the parent's embedded/ directory
   apk=$(find "$root/work/${name%.emb*}/embedded" -name "$name.apk" -type f 2>/dev/null | head -n 1)
@@ -49,7 +53,7 @@ with open(os.path.join(out, "jadx.log"), errors="replace") as f:
     if prefixes and "." not in prefixes \
         and not any(top.startswith(p.replace("/", ".").rstrip(".")) for p in prefixes):
       continue
-    todo.setdefault(top, set()).add(m.group(1))
+    todo.setdefault(top, set()).add("%s=%s" % (m.group(1), raw))
 for top in sorted(todo):
   print("%s\t%s" % (top, ";".join(sorted(todo[top]))))
 EOF
@@ -69,10 +73,21 @@ mkdir -p "$out/jadx-retry"
   echo
 } > "$out/jadx-retry/INDEX.txt"
 
+# decompile one class in simple mode into jadx-retry/<class>/ (kept from earlier runs); prints the file
+retry_class() {
+  local d="$out/jadx-retry/$1"
+  if [ ! -d "$d" ]; then
+    timeout --kill-after=10 300 "$tools/jadx/bin/jadx" --log-level ERROR -m simple --single-class "$1" \
+      --single-class-output "$d" "$apk" > "$d.log" 2>&1 || true
+  fi
+  find "$d" -name '*.java' 2>/dev/null | head -n 1
+}
+safe_name() { [[ "$1" =~ ^[A-Za-z0-9_\$][A-Za-z0-9_\$.-]*$ ]] && [[ "$1" != *..* ]]; }
+
 n=0
 while IFS=$'\t' read -r cls methods; do
   # the class name becomes a directory name: never let one from the APK leave jadx-retry/
-  if [[ ! "$cls" =~ ^[A-Za-z0-9_\$][A-Za-z0-9_\$.-]*$ ]] || [[ "$cls" == *..* ]]; then
+  if ! safe_name "$cls"; then
     echo "- $cls [skipped: unusual class name]" >> "$out/jadx-retry/INDEX.txt"
     continue
   fi
@@ -81,20 +96,27 @@ while IFS=$'\t' read -r cls methods; do
     echo "- (stopped after $max classes; raise JADX_RETRY_MAX or pass a class-prefix)" >> "$out/jadx-retry/INDEX.txt"
     break
   fi
-  dir="$out/jadx-retry/$cls"
-  if [ ! -d "$dir" ]; then
-    timeout --kill-after=10 300 "$tools/jadx/bin/jadx" --log-level ERROR -m simple --single-class "$cls" \
-      --single-class-output "$dir" "$apk" > "$dir.log" 2>&1 || true
-  fi
-  file=$(find "$dir" -name '*.java' 2>/dev/null | head -n 1)
-  for m in ${methods//;/ }; do
+  top_file=$(retry_class "$cls")
+  for pair in ${methods//;/ }; do
+    m=${pair%%=*}
+    raw=${pair#*=}
     short=${m##*.}
-    state="not produced"
+    file=$top_file
+    # jadx writes some inner classes (Kotlin lambdas it does not inline) as files of their
+    # own: the outer class's file then lacks the method, which is not the same as fixed
+    if [ "$raw" != "$cls" ] && { [ -z "$file" ] || ! grep -qF -- "$raw" "$file"; } \
+        && { [ -z "$file" ] || ! grep -qE "(class|interface|enum) ${raw##*\$}\b" "$file"; }; then
+      file=""
+      if safe_name "$raw"; then
+        file=$(retry_class "$raw")
+      fi
+    fi
+    state="not produced (./cupella dex-disasm.py $name '$raw')"
     if [ -n "$file" ]; then
       if grep -qF -e "Method not decompiled: $m(" -e "in method: $m(" "$file" \
         || { dump=$(grep -A3 -F -- "Method dump skipped" "$file" || true)
              [ -n "$dump" ] && grep -qwF -- "$short" <<< "$dump"; }; then
-        state="STILL FAILED in simple mode (./cupella dex-disasm.py $name $m)"
+        state="STILL FAILED in simple mode (./cupella dex-disasm.py $name '$raw')"
       else
         state="ok"
       fi

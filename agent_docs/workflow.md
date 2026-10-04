@@ -40,6 +40,10 @@ analysis, or when the answer needs more than a few cited lines.
   workspace's own, the docs are read-only copies at the same paths, and `./cupella` runs
   the checkout (`WORKSPACE.md`).
   The user puts them there; never move, rename, or delete anything in `data/`.
+- A sample that came as a password-protected archive (`data/<sha256>.zip` from a malware
+  repository) is taken out with `./cupella sample-archive.py data/<file>.zip`; the APK
+  lands in `work/_samples/<name>.apk`, and `unpack.sh` takes that path. Never extract it
+  with host tools, and never write to `data/`.
 - `<name>` is the APK filename without `.apk`. Every stage keys on it: `work/<name>/`,
   `reports/<name>.md`. `./cupella run-decryptor.sh` accepts only names made of letters,
   digits, `.`, `_`, and `-`; ask the user to rename a file before staging it if needed.
@@ -174,8 +178,12 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
   key or algorithm, and check that each child in `outputs.txt` decompiled.
 - Name subagent output files after their content, never `report*`: Claude Code, for one, refuses
   a subagent's write to a file named like a report ([gotchas.md](gotchas.md)).
-- Verification output is `work/<name>/verification.md`, or the agent's final
-  message when it cannot write. Fix every "wrong" and "overstated" item after
+- Reader output is `work/<name>/progress/<role>-findings.md`, written finding by finding;
+  the final message is one line. A reader that summarizes malware behavior in its final
+  message can be stopped by a safety classifier while writing it, and the summary is
+  lost ([harnesses.md](harnesses.md)).
+- Verification output is `work/<name>/verification.md`, written section by section, or
+  the agent's final message when it cannot write. Fix every "wrong" and "overstated" item after
   checking it against the code yourself; the verifier can be wrong too. One data point
   for cost: verifying the Octo report took about 150k tokens and 3 minutes and found 3
   wrong and 4 overstated claims out of 25.
@@ -250,8 +258,8 @@ script covers:
    keep the change only on PASS.
 4. Check that past reports' findings are still pointed at: `./cupella lead-eval.py <name>`.
 5. After changes to extraction, `unpack.sh`, `elf.py`, or the injection scan, run
-   `./cupella check` (the fixtures, the native fixture, and `cite-check.py` on every
-   report, then the gate), and re-unpack one benign and one malformed sample with `-f`:
+   `./cupella check` (the fixtures, including the manifest tricks, the native fixture, and
+   `cite-check.py` on every report, then the gate), and re-unpack one benign and one malformed sample with `-f`:
    a change in what jadx reads moved the Octo report's citations once.
 6. The gate measures leads, not every section: a new informational section (a triage
    check, a summary) passes with "improved: none". Run it over the whole corpus and read

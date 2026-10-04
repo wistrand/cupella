@@ -24,15 +24,21 @@ file when an item is done or new evidence moves it.
    The native layer of Octo and Coper is not open any more: the decryption stage
    decrypted it statically (RC4, key constants in `.rodata`); `make_AES_key` and
    `get_salt` are run-time helpers outside the unpack path. Left:
-   - keys that are themselves encrypted strings (three of ZNIU's five DES payloads):
-     rerun the search with the plaintexts of `stringfog.py` and of the decryption stage;
+   - keys that are themselves encrypted strings: done 2026-10-03 for strings `stringfog.py`
+     decodes and strings the decryption stage wrote (14 ZNIU-family samples: 26 more
+     payloads; all five of ZNIU's with the agent's strings, four without). A decoder
+     with fewer than 20 constant calls, or more than two arguments, is still not decoded;
    - keys computed by code (BTMOB's stub: two constants XORed with the SHA-256 of the
      package name; 67 MalEval samples have files that look encrypted and stay so);
    - a set of split APKs comes out as separate children (base without dex, dex split),
      not reassembled as one app;
-   - string tables: AES-CBC with key and IV at the call site (Rotexy) and ZKM-style XOR
-     tables (DoubleLocker) still need the decryption stage; `stringfog.py` covers
-     two-argument Base64+XOR and XOR decoders only.
+   - string tables: `stringfog.py` now also decodes hex or Base64 with DES, AES, or RC4
+     and the key at the call (28 decoders in the corpus, all `hex > DES`), plain Base64
+     or hex one-argument helpers (16), and searches the dex constants for a key that
+     is not at the call (no real case in the corpus yet; two false XOR hits led to the
+     word-likeness check). AES-CBC with key and IV at the call site (Rotexy, three and
+     more arguments) and ZKM-style XOR tables (DoubleLocker) still need the decryption
+     stage.
 2. **Flows through R8-renamed libraries.** `flows.py` finds sources and sinks by API
    name, so when Room, DataStore, or OkHttp are renamed the path ends at an unnamed
    call (launcher A's screen-text-to-database finding is invisible to it). Next step:
@@ -81,6 +87,12 @@ From the agent benchmarks; each is small and testable on the same samples.
 - The coverage critic (a fresh agent that lists checklist items, exported components,
   and lead sections the report did not examine) is not built yet; it targets the
   category misses seen on Ghera and the vulnerable apps.
+- Readers and the verifier now write their findings to a file as they go and end with a
+  one-line message (2026-10-04), after two of four readers were stopped while writing
+  their final summaries. The verifier of that report ran this way and completed (72
+  claims, 390k tokens, 13 minutes). The reader prompt is not yet tested; check on the
+  next malware analysis that the findings files are complete and that fewer agents
+  are stopped.
 - Large apps split by area across parallel reader agents with `prompts/read-area.md`:
   run on the BTMOB rerun (2026-10-03), six readers (dropper, C2, accessibility, pages,
   telephony, media), 136k to 265k tokens and 4 to 6 minutes each; a seventh area
@@ -130,6 +142,32 @@ From the agent benchmarks; each is small and testable on the same samples.
   benchmark slice through each before claiming benchmark parity.
 
 ## Anti-analysis
+
+- From the dropper analysis of 2026-10-03 (`1e5c2b9f...`): the triage's "declares:" lines
+  are text matches on the manifest and fire on `<queries>`; `class-coverage.py` lists
+  classes jadx writes under generated names (`C0287`) as missing; `stringfog.py` decodes
+  number-table strings from the jadx text, so a method jadx failed on keeps its strings
+  hidden (decode from the bytecode instead: `sget-object` of the table, three int
+  constants, `invoke-static`); the 347 classes with unprintable names injected into
+  library packages are outside the scan scope and nothing lists what they hold.
+- From the SMS stealer analysis of 2026-10-04 (`2798eaf6...`, np protector, Kotlin):
+  - Behavior maps of Kotlin coroutine code are noisy and short: `create`, `invoke`, and
+    `invokeSuspend` of each suspend lambda are separate nodes printed under the outer
+    class's name, the per-class string-table helper is a node, and a chain ends where
+    work continues in a suspend lambda (`payWithCard` showed two of six steps). Collapse
+    a suspend lambda into the function that creates it and drop decoder helpers.
+  - The protector masks integer constants (resource ids) through a per-class helper
+    (`f(7307049)`, each byte XORed with a constant). `stringfog.py` does not resolve
+    them; the notification texts were looked up by hand in `public.xml`.
+  - Assets encrypted with a key the server gives out (`.enc`, AES-GCM) are listed in
+    `encrypted-left.txt` like any other; nothing says that the key is fetched, which
+    the agent finds only by reading. A lead: a class that builds a `SecretKeySpec`
+    from a network response field.
+  - `sample-archive.py` knows one password ("infected") unless given another.
+  - `jadx-retry.sh` (fixed 2026-10-04) retries an inner class that jadx writes as a
+    file of its own; before, the index said "ok" for a method that was not in the
+    retried file. Still open: the "ok" test is the absence of a failure marker, not
+    the presence of the method.
 
 - Direct system calls (`native-summary.py`): found in 32-bit ARM libraries of five
   samples; no arm64 library in the corpus has any, so the arm64 path has no positive
@@ -185,6 +223,8 @@ From the agent benchmarks; each is small and testable on the same samples.
   B: 11 of 206,995 methods differ, all array `clone()` naming), every jadx function has
   one dex method, and no direct call androguard has is missing. Gate: Ghera and MalEval
   unchanged; baseline re-recorded 2026-10-03 with exact chain scoring in `lead-eval.py`
+  and again 2026-10-04 (121 metrics, after the MalEval gains from `payload-decrypt.py`
+  and the two malware reports)
   (launcher B `structure-leads.txt` 5 of 12, was 6 with one short-name collision). Left:
   - Chains in `structure-leads.txt` can string several `~` steps together (launcher B:
     an Instabridge activity "reaching" launcher code in three outside steps). Rank or

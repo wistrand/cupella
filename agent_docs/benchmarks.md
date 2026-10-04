@@ -32,7 +32,8 @@ The data comes from `./bench-setup` (in the checkout): it fetches each dataset f
 its source and checks it against the hashes in `bench-sources/`. Then unpack and scan every app once (`./cupella unpack.sh`,
 `./cupella scan.sh`), and record the gate baseline (`./cupella gate baseline`). Baselines
 recorded before 2026-10-03 named report metrics by the first 24 characters of the
-report name; record a new one before the next `./cupella gate`.
+report name; record a new one before the next `./cupella gate`. The current baseline
+(2026-10-04) has 121 metrics: Ghera, MalEval, and lead coverage of 10 reports.
 
 After changing `scan.sh`, `scope.py`, `structure-leads.py`, `units.py`, or the unpack
 steps, rescan and rerun:
@@ -175,7 +176,8 @@ Agent stages added after these runs (2026-10-02):
 - Payload decryption by script (`payload-decrypt.py`, 2026-10-03), no agent: 29 of 230
   malware samples have a payload it decrypts (AES-128-ECB with a Base64 key 14, RC4 with
   a string or byte-array key 10, a byte offset 10, zlib only 3, DES between zlib layers
-  2; some samples have two), 0 of 25 benign apps; 67 samples keep files that look
+  2, DES with a key that `stringfog.py` decodes first 26 in 14 samples; some samples
+  have several), 0 of 25 benign apps; 67 samples keep files that look
   encrypted. With the decrypted children scanned, the scripted behavior signals rose:
   Bank Stealing code 68 to 75 and flow 24 to 37, Privacy Stealing code 76 to 83,
   SMS/CALL code 60 to 68, Premium Service code 7 to 14 (percent of labeled samples;

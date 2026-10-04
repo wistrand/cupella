@@ -18,7 +18,7 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 | `data/`                  | input APKs, read-only (mounted read-only in the container); any subdirectories; benchmark APKs in `data/ghera/`, `data/maleval/` (live malware), `data/vulnapps/`; gitignored |
 | `work/<name>/`           | derived output per APK, disposable, gitignored                          |
 | `work/<name>.emb<k>/`, `work/<name>.dec<k>/` | child samples: payloads found by content or decrypted by script (`payload-decrypt.py`), and payloads decrypted by the decryption stage |
-| `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs, evidence bundles (`work/_evidence/<name>/`) |
+| `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs, evidence bundles (`work/_evidence/<name>/`), APKs taken out of sample archives (`work/_samples/`) |
 | `reports/<name>.md`      | the analysis report, the only authored output per sample                |
 | `scripts/`               | everything that runs in the container (mounted read-only)               |
 | `prompts/`               | prompt templates for subagent stages (`decrypt.md`, `verify-report.md`, `read-area.md`, `verify.md`); `prompts/bench/` for benchmarks |
@@ -50,6 +50,7 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `class-coverage.py`           | classes jadx did not produce, classes defined in more than one dex, misleading or overlong class names; in `triage.txt` |
 | `axml2xml.py`                 | binary XML to text, tolerant of tampered manifests; fallback when apktool fails |
 | `dexlist.py`                  | class names and string pool from dex files, no decompiler needed        |
+| `sample-archive.py`           | lists a password-protected sample archive (ZipCrypto or WinZip AES, password "infected" by default) and extracts the APK in it to `work/_samples/`; `data/` is not changed |
 | `embedded.py`                 | finds dex and dex archives inside the APK by content                    |
 | `payload-decrypt.py`          | decrypts payloads whose key is a constant in the APK: tries DES, 3DES, AES, RC4, and XOR with every dex string, byte array, and native string on files that look encrypted, and keeps results that are a dex, a ZIP with dex, or an ELF; `unlocked/`, `unlocked.txt` (cipher, key, where the key is), `encrypted-left.txt` (not decrypted); run by `unpack.sh`, which unpacks the results as `.emb<k>` |
 | `manifest-summary.py`         | permissions, app flags, reachable components with filters, priorities, task attributes |
@@ -61,10 +62,10 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `flutter-summary.py`          | Flutter: Dart packages, source files, URLs, channels from the AOT snapshot |
 | `flutter-decompile.sh`        | Flutter: blutter output and `dart/INDEX.txt`                            |
 | `scope.py`                    | default scan scope: manifest package, component packages, R8-flattened app packages, minus libraries; `--why` gives reasons |
-| `stringfog.py`                | finds constant-argument string decoders in the bytecode, decodes known schemes (Base64+XOR, XOR), writes `string-map.tsv` and `jadx-strings/`; run by `scan.sh` |
+| `stringfog.py`                | decodes string-decoder calls with constant arguments (one or two String arguments): Base64/hex with XOR, DES, AES, or RC4 and the key at the call, plain Base64 or hex, or a key searched among the dex constants; number-table strings (`decode(table, offset, length, key)` and per-class `NAME(start, end, key)`, read from the jadx sources, `string-tables.tsv`; its copies are listed in `jadx-strings/TABLES.txt` and replaced on a rescan, other files in `jadx-strings/` are left alone); `string-map.tsv`, `jadx-strings/`; `scan.sh` runs it, `payload-decrypt.py` uses its plaintexts as keys |
 | `code-vs-package.py`          | permissions the code names but the manifest does not request; native libraries the code loads but the APK does not ship; run by `scan.sh` |
 | `family-markers.py`           | matches strings against published family markers (`family-markers.tsv`, each row with its source); run by `scan.sh` |
-| `jadx-retry.sh`               | re-decompiles failed methods in jadx's simple mode                      |
+| `jadx-retry.sh`               | re-decompiles failed methods in jadx's simple mode; an inner class jadx writes as its own file (a Kotlin lambda) is retried by itself |
 | `structure-leads.py`          | leads from call graph and control structure: entry points, coordinators, dispatch, loops, decoders, capability map |
 | `flows.py`                    | source-to-sink data flows in bytecode (`flows.txt`)                     |
 
@@ -133,6 +134,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella class-coverage.py <name>                # classes jadx did not produce, duplicates, odd names (unpack.sh runs it)
 ./cupella fixtures/zipslip-test.sh                # extraction stays inside the sample; decompression limits hold
 ./cupella fixtures/injection-test.sh              # the injection scan sees every place text hides
+./cupella fixtures/manifest-tricks-test.sh        # a manifest hidden by ZIP and binary-XML tricks is still read
 ./cupella fixtures/elf-headers-test.sh <lib.so>...# the ELF reader without section headers
 ./cupella native-disasm.py <lib.so> --jni         # annotated disassembly; see runbook-native
 ./cupella native-decompile.sh <lib.so> [fn]       # Ghidra C output
@@ -141,6 +143,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella apk-diff.py <old> <new> > work/<new>/diff-from-<old>.txt
 ./cupella reference-check.py <name> > work/<name>/reference-check.txt   # NETWORK
 ./cupella run-decryptor.sh <name>                 # decryption stage
+./cupella sample-archive.py data/<file>.zip        # a sample that came as a password-protected archive: APK to work/_samples/
 ./cupella cite-check.py <name>                    # before finishing a report
 ./cupella evidence-bundle.py <name>               # for a report to be published: the cited lines as work/_evidence/<name>/
 ./cupella lead-eval.py [-v] <name>                # lead files vs. the report's Findings

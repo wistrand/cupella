@@ -64,7 +64,7 @@ cupella_help() {
   echo "Scripts (./cupella <script> [args]; usage in each script's header):"
   (cd "$root/scripts" && ls -1 -- *.sh *.py 2> /dev/null | grep -v -E '^(units|dex|elf|android_perms|llav_client)\.py$' \
     | column -c "${COLUMNS:-100}" 2> /dev/null || ls -1 -- *.sh *.py)
-  echo "  fixtures/zipslip-test.sh  fixtures/injection-test.sh  fixtures/elf-headers-test.sh"
+  echo "  fixtures/zipslip-test.sh  fixtures/injection-test.sh  fixtures/manifest-tricks-test.sh  fixtures/elf-headers-test.sh"
   echo
   echo "Workflow and the full command list: AGENTS.md, agent_docs/reference.md"
 }

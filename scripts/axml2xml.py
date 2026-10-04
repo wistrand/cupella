@@ -120,6 +120,9 @@ def decode(buf):
     if hsize < 8 or size < hsize:
       lines.append("<!-- axml2xml: bad chunk sizes at 0x%x (header %d, size %d); parsing stopped -->" % (off, hsize, size))
       break
+    if off + size > len(buf):
+      lines.append("<!-- axml2xml: the chunk at 0x%x needs %d bytes and the file has %d left: truncated file -->"
+                   % (off, size, len(buf) - off))
     try:
       depth = chunk(buf, off, ctype, hsize, size, lines, depth, state)
     except (struct.error, IndexError):
@@ -158,7 +161,11 @@ def chunk(buf, off, ctype, hsize, size, lines, depth, st):
         n = ATTR_NAMES[resmap[a_name]]  # the resource id decides, as on the device
       elif not strings[a_name] and a_name < len(resmap):
         n = "attr_0x%08x" % resmap[a_name]
-      if a_ns != NO_ENTRY:
+      if a_name < len(resmap) and resmap[a_name] >> 24 == 0x01:
+        # a framework attribute by its resource id: the device reads it as android:<name>
+        # whatever the namespace field says (tampered manifests leave the namespace out)
+        n = "android:%s" % n
+      elif a_ns != NO_ENTRY:
         n = "%s:%s" % (xml_name(ns_prefix.get(strings[a_ns], strings[a_ns])), n)
       attrs.append("%s=%s" % (n, attr_value(fmt_value(strings, a_raw, a_type, a_data))))
     lines.append("%s<%s%s>" % ("  " * depth, xml_name(strings[name]), "".join(" " + a for a in attrs)))
@@ -176,4 +183,8 @@ def chunk(buf, off, ctype, hsize, size, lines, depth, st):
 
 if __name__ == "__main__":
   with open(sys.argv[1], "rb") as f:
-    sys.stdout.write(decode(f.read()))
+    text = decode(f.read())
+  sys.stdout.write(text)
+  if not any(line.lstrip().startswith("<") and not line.lstrip().startswith(("<?", "<!--")) for line in text.split("\n")):
+    # an empty document is not a manifest without content: say so, never look like success
+    sys.exit("axml2xml: no element decoded from %s (truncated, or not binary XML)" % sys.argv[1])

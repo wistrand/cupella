@@ -11,8 +11,9 @@ that looks encrypted, and keeps a result only when it is code:
            decompressed
   keys     dex string constants (as bytes, and Base64- or hex-decoded, and their MD5 and
            SHA-256), byte arrays from fill-array-data, printable strings of the native
-           libraries; for XOR also the key that turns the first bytes into a dex or ZIP
-           header
+           libraries, strings that stringfog.py decodes and that the decryption stage
+           wrote (decrypt/out/); for XOR also the key that turns the first bytes into a
+           dex or ZIP header
   ciphers  DES and 3DES (ECB, CBC), AES-128/192/256 (ECB, CBC; IV zero, the key, or the
            file's first block), RC4, repeating-key XOR, one-byte XOR and ADD
   check    the plaintext, after zlib, gzip, or ZIP layers, is a dex with a consistent
@@ -213,55 +214,6 @@ def candidate_files(raw):
   return found[:MAX_FILES]
 
 
-def dex_constants(raw):
-  """(strings, byte arrays) of the dex files Android loads: [(text, where)], [(bytes, where)]"""
-  strings, arrays = {}, {}
-  for f in sorted(os.listdir(raw)):
-    if not re.match(r"classes\d*\.dex$", f):
-      continue
-    with open(os.path.join(raw, f), "rb") as fh:
-      buf = fh.read()
-    if buf[:4] != b"dex\n":
-      continue
-    try:
-      d = dex.Dex(buf)
-      for i in range(d.s_n):
-        try:
-          s = d.string(i)
-        except (ValueError, IndexError, struct.error):
-          continue
-        if 4 <= len(s) <= 512:
-          strings.setdefault(s, "string in %s" % f)
-      for cls, data, _s, _i in d.classes():
-        for idx, code in d.methods_of(data):
-          if not code:
-            continue
-          try:
-            (n,) = struct.unpack_from("<I", buf, code + 12)
-            base, pc = code + 16, 0
-            while pc < n:
-              unit = struct.unpack_from("<H", buf, base + 2 * pc)[0]
-              op = unit & 0xFF
-              if op == 0 and unit in (0x0100, 0x0200, 0x0300):
-                if unit == 0x0300:
-                  width, size = struct.unpack_from("<HI", buf, base + 2 * pc + 2)
-                  if width == 1 and 4 <= size <= 256:
-                    arr = buf[base + 2 * pc + 8:base + 2 * pc + 8 + size]
-                    arrays.setdefault(arr, "byte array in %s" % d.method(idx)[4])
-                  pc += (size * width + 1) // 2 + 4
-                elif unit == 0x0100:
-                  pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 2 + 4
-                else:
-                  pc += struct.unpack_from("<H", buf, base + 2 * pc + 2)[0] * 4 + 2
-                continue
-              pc += dex.WIDTH[op]
-          except (struct.error, IndexError, ValueError):
-            continue
-    except (struct.error, IndexError, ValueError):
-      continue
-  return strings, arrays
-
-
 def native_strings(raw):
   out = {}
   lib = os.path.join(raw, "lib")
@@ -341,24 +293,26 @@ def search(files, keys, deadline):
   from Cryptodome.Cipher import AES, ARC4, DES, DES3
   results, done = [], set()
 
-  def accept(i, name, key, plain):
+  def accept(i, name, key, plain, where):
     if i in done:
       return
     parts = code_parts(plain)
     if parts:
       done.add(i)
-      results.extend((i, layers, name, key, kind, data) for kind, data, layers in parts)
+      results.extend((i, layers, name, key, kind, data, where) for kind, data, layers in parts)
 
   # without a key: one-byte XOR and ADD, and XOR keys given away by the expected header
   for i, (_src, data, layers) in enumerate(files):
     head = data[:8]
     if layers:
-      accept(i, "no cipher", b"", data)
+      accept(i, "no cipher", b"", data, "")
     for k in range(1, 256):
       if bytes([head[0] ^ k, head[1] ^ k]) in FIRST2:
-        accept(i, "XOR with one byte", bytes([k]), data.translate(bytes(b ^ k for b in range(256))))
+        accept(i, "XOR with one byte", bytes([k]), data.translate(bytes(b ^ k for b in range(256))),
+               "found by trying all 255")
       if bytes([(head[0] - k) & 255, (head[1] - k) & 255]) in FIRST2:
-        accept(i, "each byte minus a constant", bytes([k]), data.translate(bytes((b - k) & 255 for b in range(256))))
+        accept(i, "each byte minus a constant", bytes([k]), data.translate(bytes((b - k) & 255 for b in range(256))),
+               "found by trying all 255")
     for magic in (b"dex\n035\0", b"dex\n036\0", b"dex\n037\0", b"dex\n038\0", b"dex\n039\0",
                   b"PK\x03\x04\x14\x00\x00\x00", b"PK\x03\x04\x14\x00\x08\x00", b"PK\x03\x04\x0a\x00\x00\x00",
                   b"PK\x03\x04\x14\x00\x08\x08"):
@@ -367,13 +321,14 @@ def search(files, keys, deadline):
         if all(ks[j] == ks[j % n] for j in range(8)):
           key = ks[:n]
           if header_ok(xor_repeat(data[:0x70], key)):
-            accept(i, "XOR with a repeating key (from the expected header)", key, xor_repeat(data, key))
+            accept(i, "XOR with a repeating key", key, xor_repeat(data, key),
+                   "the expected file header (known plaintext)")
           break
 
   heads = [d[:32].ljust(32, b"\0") for _s, d, _l in files]
   buf = b"".join(heads)
 
-  def block_cipher(name, mod, key, bs, make):
+  def block_cipher(name, mod, key, bs, make, where):
     try:
       out = make(mod.MODE_ECB).decrypt(buf)
     except ValueError:
@@ -386,33 +341,36 @@ def search(files, keys, deadline):
       whole = len(data) - len(data) % bs
       if p0[:2] in FIRST2:  # ECB, or CBC with a zero IV: the first block is the same
         full = make(mod.MODE_ECB).decrypt(data[:whole])
-        accept(i, name + "-ECB", key, unpad(full, bs))
+        accept(i, name + "-ECB", key, unpad(full, bs), where)
         if i not in done:
-          accept(i, name + "-CBC, zero IV", key, unpad(mod.new(key, mod.MODE_CBC, bytes(bs)).decrypt(data[:whole]), bs))
+          accept(i, name + "-CBC, zero IV", key, unpad(mod.new(key, mod.MODE_CBC, bytes(bs)).decrypt(data[:whole]), bs),
+                 where)
       if xor(p0, key)[:2] in FIRST2 and len(key) >= bs:
-        accept(i, name + "-CBC, IV = key", key, unpad(mod.new(key, mod.MODE_CBC, key[:bs]).decrypt(data[:whole]), bs))
+        accept(i, name + "-CBC, IV = key", key, unpad(mod.new(key, mod.MODE_CBC, key[:bs]).decrypt(data[:whole]), bs),
+               where)
       if xor(p1, c0)[:2] in FIRST2 and whole > bs:
         accept(i, name + "-CBC, IV = the file's first block", key,
-               unpad(mod.new(key, mod.MODE_CBC, c0).decrypt(data[bs:whole]), bs))
+               unpad(mod.new(key, mod.MODE_CBC, c0).decrypt(data[bs:whole]), bs), where)
 
   n = 0
-  for key, _where in keys.items():
+  for key, where in keys.items():
     n += 1
     if n % 2000 == 0 and (time.time() > deadline or len(done) == len(files)):
       break
     ln = len(key)
-    if ln >= 8:
-      k8 = key[:8]
-      block_cipher("DES", DES, k8, 8, lambda mode, k=k8: DES.new(k, mode))
+    if ln >= 4:
+      k8 = (key + bytes(8))[:8]
+      block_cipher("DES", DES, k8, 8, lambda mode, k=k8: DES.new(k, mode),
+                   where + (", its first 8 bytes" if ln > 8 else ", zero-padded to 8 bytes" if ln < 8 else ""))
     if ln in (16, 24, 32):
-      block_cipher("AES-%d" % (ln * 8), AES, key, 16, lambda mode, k=key: AES.new(k, mode))
+      block_cipher("AES-%d" % (ln * 8), AES, key, 16, lambda mode, k=key: AES.new(k, mode), where)
     elif ln > 16:
       k16 = key[:16]
-      block_cipher("AES-128 (first 16 bytes)", AES, k16, 16, lambda mode, k=k16: AES.new(k, mode))
+      block_cipher("AES-128", AES, k16, 16, lambda mode, k=k16: AES.new(k, mode), where + ", its first 16 bytes")
     if ln in (16, 24):
       try:
         k3 = DES3.adjust_key_parity(key)
-        block_cipher("3DES", DES3, k3, 8, lambda mode, k=k3: DES3.new(k, mode))
+        block_cipher("3DES", DES3, k3, 8, lambda mode, k=k3: DES3.new(k, mode), where)
       except ValueError:
         pass
     if ln >= 5:
@@ -422,11 +380,11 @@ def search(files, keys, deadline):
           continue
         h = heads[i]
         if bytes([h[0] ^ ks[0], h[1] ^ ks[1]]) in FIRST2:
-          accept(i, "RC4", key, ARC4.new(key).decrypt(files[i][1]))
+          accept(i, "RC4", key, ARC4.new(key).decrypt(files[i][1]), where)
         if ln <= 64 and bytes([h[0] ^ key[0], h[1] ^ key[1]]) in FIRST2:
           data = files[i][1]
           if header_ok(xor_repeat(data[:0x70], key)):
-            accept(i, "XOR with a repeating key", key, xor_repeat(data, key))
+            accept(i, "XOR with a repeating key", key, xor_repeat(data, key), where)
   return results, n
 
 
@@ -445,14 +403,39 @@ def main():
     open(os.path.join(work, "encrypted-left.txt"), "w").close()
     print("payload-decrypt: no file that looks encrypted")
     return
-  strings, arrays = dex_constants(raw)
+  strings, arrays = dex.constants(raw, 4, 512)
+  # keys that are themselves hidden strings: what stringfog.py decodes, and what the
+  # decryption stage wrote for this sample
+  decoded = {}
+  try:
+    import stringfog
+    for t in stringfog.decode(work)[1].values():
+      if 4 <= len(t) <= 512:
+        decoded.setdefault(t, "string decoded by stringfog.py")
+    if os.path.isdir(os.path.join(work, "jadx", "sources")):
+      for _rel, _line, _callee, t in stringfog.table_strings(work)[1]:
+        if 4 <= len(t) <= 512:
+          decoded.setdefault(t, "string decoded by stringfog.py (number table)")
+  except Exception as ex:  # a decoder problem must not stop the payload search
+    print("payload-decrypt: decoded strings not used (%s)" % str(ex)[:100])
+  for rel, col in (("decrypt/out/strings.txt", 1), ("decrypt/out/string-map.tsv", -1)):
+    try:
+      with open(os.path.join(work, rel), errors="replace") as f:
+        for line in f:
+          cols = line.rstrip("\n").split("\t")
+          if len(cols) >= 2 and 4 <= len(cols[col]) <= 512:
+            decoded.setdefault(cols[col], "string decrypted by the decryption stage (%s)" % rel)
+    except OSError:
+      pass
+  for t, where in decoded.items():
+    strings.setdefault(t, where)
   keys = key_material(strings, arrays, native_strings(raw))
   t0 = time.time()
   results, tried = search(files, keys, t0 + BUDGET)
   os.makedirs(out, exist_ok=True)
   rows = []
   results.sort(key=lambda r: (files[r[0]][0], r[1]))
-  for k, (i, after, cipher, key, kind, data) in enumerate(results, 1):
+  for k, (i, after, cipher, key, kind, data, where) in enumerate(results, 1):
     source, _d, before = files[i]
     ext = {"dex": "dex", "zip with dex": "apk", "zip without dex": "apk", "elf": "so"}[kind]
     member = after[-1][6:] if after and after[-1].startswith("unzip ") else source
@@ -462,8 +445,6 @@ def main():
     text = key.decode("ascii") if key and all(0x20 <= b < 0x7f for b in key) else ""
     if kind == "dex":
       kind = "dex" if dex_checksum_ok(data) else "dex, checksum does not match"
-    where = keys.get(key) or ("" if not key else "found by trying all 255" if len(key) == 1
-                              else "the expected file header (known plaintext)")
     rows.append((fname, kind, str(len(data)), source, " > ".join(before + [cipher] + after), key.hex(), text, where,
                  hashlib.sha256(data).hexdigest()))
   with open(listing, "w") as f:

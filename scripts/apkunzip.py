@@ -54,6 +54,11 @@ def read_entry(z, fp, info, limit=ENTRY_MAX, fsize=None):
   # a zip64 size can be absurd: never ask for more than the file holds (and, for stored
   # data, more than the limit allows)
   n = info.compress_size
+  if info.compress_type != zipfile.ZIP_DEFLATED:
+    # Android treats every method but deflate as stored and reads the uncompressed size;
+    # the compressed size is ignored, and samples set it too small so that extractors
+    # that trust it get a truncated file (seen on AndroidManifest.xml)
+    n = info.file_size
   if fsize is not None:
     n = min(n, max(0, fsize - start))
   if info.compress_type != zipfile.ZIP_DEFLATED:
@@ -148,6 +153,8 @@ def main():
       total += len(data)
       if len(data) != info.file_size:
         note("entries whose declared size differs from the data", info.filename)
+      if info.compress_type != zipfile.ZIP_DEFLATED and info.compress_size != info.file_size:
+        note("stored entries with a false compressed size (Android reads the uncompressed size; other tools get a truncated file)", info.filename)
       rel = info.filename
       if shadowed(rel):
         note("entries nested under a name that is also a file (moved to _shadowing/; Android looks names up exactly)", info.filename)
