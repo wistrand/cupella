@@ -32,7 +32,7 @@ def code(s, n=100):
 
 
 def cell(s, n=120):
-  s = re.sub(r"[^\x20-\x7e]", "?", str(s)).replace("|", "\\|").replace("`", "'")
+  s = re.sub(r"[^\x20-\x7e]", "?", str(s)).replace("|", "\\|").replace("`", "'").replace("<", "&lt;").replace(">", "&gt;")
   return s if len(s) <= n else s[:n] + "..."
 
 
@@ -308,12 +308,13 @@ def render(rep):
   # indicators: only when a claim maps to ATT&CK (a malicious or suspected sample) or notes add some
   ind = rep["indicators"]
   if ind is not None:
-    rows = [[r["type"], code(r["value"], 160), "dex strings (`scan.txt`)" if r["source"].startswith("dex strings")
-             else "`%s`" % r["source"]] for r in ind]
-    body = table(["Type", "Value", "Source"], rows)
+    rows = [[cell(r["type"], 40), code(r["value"], 160), "dex strings (`scan.txt`)" if r["source"].startswith("dex strings")
+             else "`%s`" % r["source"], cell(r.get("note", "")) or ("added by the analysis" if r.get("added") else "-")]
+            for r in ind]
+    body = table(["Type", "Value", "Source", "Note"], rows)
     sec("Indicators", body)
   else:
-    sec("Indicators", ["Not applicable: no claim maps to an ATT&CK technique and notes add none."])
+    sec("Indicators", ["Not applicable: no claim maps to an ATT&CK technique and the analysis adds none."])
 
   sec("Open questions", [])
   if "Method changes" not in ns:

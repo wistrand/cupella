@@ -485,6 +485,17 @@ case "$cmd" in
     done
     "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-decryptor.sh --exec "$n" \
       && offline "$image" scripts/run-decryptor.sh --unpack "$n" ;;
+  claims-promote.py)
+    # a reader's draft claims (progress/<role>-claims.jsonl) into reports/<name>/claims.jsonl:
+    # a container that sees only that draft file and reports/<name>/, no APK data
+    n=${1:-}; role=${2:-}
+    [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. && "$role" =~ ^[a-z0-9][a-z0-9-]{0,40}$ ]] \
+      || { echo "usage: ./cupella claims-promote.py <name> <role> <D-id>... [--draft] | --list" >&2; exit 1; }
+    d="$ws/work/$n/progress/$role-claims.jsonl"
+    [ -f "$d" ] && [ ! -L "$d" ] || { echo "no work/$n/progress/$role-claims.jsonl" >&2; exit 1; }
+    [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/" >&2; exit 1; }
+    exec "$docker" run "${common[@]}" --network none -v "$d:/repo/work/$n/progress/$role-claims.jsonl:ro" \
+      -v "$ws/reports/$n:/repo/reports/$n" "$image" scripts/claims-promote.py "$@" ;;
   claims-merge.py)
     # verdicts (reader output) into reports/<name>/claims.jsonl: a container that sees only
     # the verdict file and reports/<name>/, no APK data
@@ -495,6 +506,16 @@ case "$cmd" in
     [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/" >&2; exit 1; }
     exec "$docker" run "${common[@]}" --network none -v "$v:/repo/work/$n/progress/verify-verdicts.jsonl:ro" \
       -v "$ws/reports/$n:/repo/reports/$n" "$image" scripts/claims-merge.py "$n" ;;
+  scan.sh)
+    offline "$image" "scripts/$cmd" "$@" || exit
+    # a rendered report is rebuilt from the new facts.json; a hand-written one is left alone
+    n=""
+    for a in "$@"; do case "$a" in -*) ;; *) n=$a; break ;; esac; done
+    if [[ "$n" =~ ^[A-Za-z0-9._-]+$ ]] && [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ]; then
+      if [ ! -s "$ws/reports/$n.md" ] || grep -q "rendered by scripts/report-render.py" "$ws/reports/$n.md"; then
+        "$root/cupella" report-build.py "$n" || echo "== could not build reports/$n.md (./cupella report-build.py $n)" >&2
+      fi
+    fi ;;
   report-build.py | report-render.py)
     # report-build.py: reports/<name>.json from facts.json (scripts) and reports/<name>/
     # (agent), then report-render.py: reports/<name>.md from that JSON alone. Each in a
@@ -545,11 +566,15 @@ case "$cmd" in
     # a Flutter app's logic is in libapp.so: continue with the Dart step
     for a in "$@"; do apk=$a; done
     name=$(basename "$apk" .apk)
-    # the report skeleton (scripts/report-skeleton.py) becomes reports/<name>.md on the
-    # host, never overwriting a report; the container that read the APK cannot write reports/
-    skel="$ws/work/$name/report-skeleton.md"
-    if [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] && [ -f "$skel" ] && [ ! -L "$skel" ] && [ ! -e "$ws/reports/$name.md" ] && [ ! -L "$ws/reports/$name.md" ]; then
-      cp "$skel" "$ws/reports/$name.md" && echo "== wrote reports/$name.md (skeleton: Identity and Signing filled)"
+    # a new analysis gets the sources of a rendered report (design-report.md "Rendered
+    # reports"): reports/<name>/ with a stub notes.md and an empty claims.jsonl, written on
+    # the host (the container that read the APK cannot write reports/). Never when any
+    # report exists. scan.sh then builds the report from facts.json.
+    if [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] && [ ! -e "$ws/reports/$name.md" ] && [ ! -L "$ws/reports/$name.md" ] \
+        && [ ! -e "$ws/reports/$name" ] && [ ! -L "$ws/reports/$name" ]; then
+      mkdir "$ws/reports/$name" && printf '## Summary\nnot reached\n' > "$ws/reports/$name/notes.md" \
+        && : > "$ws/reports/$name/claims.jsonl" \
+        && echo "== wrote reports/$name/ (notes.md, claims.jsonl); scan.sh builds reports/$name.md from facts"
     fi
     if [ -f "$ws/work/$name/raw/lib/arm64-v8a/libapp.so" ] && [ ! -d "$ws/work/$name/dart/asm" ]; then
       echo "== Flutter app: running the Dart analysis (./cupella flutter-decompile.sh $name)"

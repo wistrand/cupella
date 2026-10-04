@@ -27,7 +27,12 @@ Findings. A record:
               {"result": "holds"|"overstated"|"wrong", "note": "...", "by": "verify",
                "refs": ["<path>:<line>", ...]}
 
-Checks: the schema; every ref names an existing file and lines inside it; every quote is
+reports/<name>/indicators.jsonl (optional) holds indicators the agent adds to the ones
+report-build.py takes from facts.json (decoded hosts, keys, names), one per line:
+  {"type": "<what it is, at most 40 characters>", "value": "<exact value, at most 300>",
+   "source": "<path>:<line> or <path> where it was seen", "note": "<optional, at most 200>"}
+
+Checks: the schema (both files); every ref and indicator source names an existing file and lines inside it; every quote is
 on the cited lines (whitespace ignored), else where it moved; every entry/api pair is in
 work/<name>/facts.json. Exit status 1 when anything fails.
 
@@ -113,6 +118,39 @@ def load(path):
   return claims, problems
 
 
+IND_FIELDS = {"type", "value", "source", "note"}
+
+
+def load_indicators(path):
+  """([indicators], [problems]) from an indicators.jsonl, schema checked"""
+  rows, problems = [], []
+  if not os.path.isfile(path):
+    return rows, problems
+  with open(path, errors="replace") as f:
+    for n, line in enumerate(f, 1):
+      if not line.strip():
+        continue
+      where = "indicators.jsonl:%d" % n
+      try:
+        r = json.loads(line)
+      except ValueError as e:
+        problems.append("%s: not JSON (%s)" % (where, e))
+        continue
+      if not isinstance(r, dict):
+        problems.append("%s: not an object" % where)
+        continue
+      for k in sorted(set(r) - IND_FIELDS):
+        problems.append("%s: unknown field %s" % (where, k))
+      for k, lim, req in (("type", 40, True), ("value", 300, True), ("source", 300, True), ("note", 200, False)):
+        v = r.get(k)
+        if v is None and not req:
+          continue
+        if not isinstance(v, str) or not v.strip() or len(v) > lim:
+          problems.append("%s: %s must be a non-empty string of at most %d characters" % (where, k, lim))
+      rows.append(r)
+  return rows, problems
+
+
 def resolve(name, path):
   """file path for a ref path, or None"""
   work = os.path.join(ROOT, "work", name)
@@ -183,6 +221,13 @@ def main():
   if not os.path.isfile(path):
     sys.exit("no reports/%s/claims.jsonl" % name)
   claims, problems = load(path)
+  inds, ip = load_indicators(os.path.join(ROOT, "reports", name, "indicators.jsonl"))
+  problems += ip
+  for i, r in enumerate(inds, 1):
+    src = str(r.get("source", ""))
+    p = re.sub(r":\d+(?:-\d+)?$", "", src)
+    if p and re.match(r"^[\w./$+-]+$", p) and not resolve(name, p):
+      problems.append("indicators.jsonl:%d: source %s: no such file" % (i, src))
   fp = os.path.join(ROOT, "work", name, "facts.json")
   facts = None
   if os.path.isfile(fp):
@@ -191,7 +236,8 @@ def main():
   problems += check_evidence(name, claims, facts)
   n = {s: sum(1 for c in claims if c.get("status") == s) for s in sorted(STATUS)}
   print("# Claims check: reports/%s/claims.jsonl" % name)
-  print("%d claims (%s); %d problems" % (len(claims), ", ".join("%s %d" % kv for kv in n.items()), len(problems)))
+  print("%d claims (%s); %d added indicators; %d problems" % (
+    len(claims), ", ".join("%s %d" % kv for kv in n.items()), len(inds), len(problems)))
   for p in problems:
     print(p)
   sys.exit(1 if problems else 0)

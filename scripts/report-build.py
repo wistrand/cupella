@@ -11,6 +11,8 @@ Sources, each with one owner:
                                 names of design-report.md), "## Threat: <name>" blocks
                                 for a threat in Findings, an optional first line
                                 "# <title>"
+  reports/<name>/indicators.jsonl  agent, optional: indicators the facts cannot hold
+                                (decoded hosts, keys); fields in claims-check.py
 
 The JSON (format "cupella-report/1") is the report: the facts, the findings in report
 order with entry evidence resolved to its Behavior facts row, drafts, indicators, and the
@@ -77,10 +79,11 @@ def ordered(claims):
   return list(enumerate(seq, 1))
 
 
-def indicators(f, claims, notes_have):
-  """[{type, value, source}] for a malicious or suspected sample (a claim maps to ATT&CK, or
-  notes add indicators); None when not applicable"""
-  if not (any(c.get("attack") for c in claims if c.get("status") != "rejected") or notes_have):
+def indicators(f, claims, notes_have, added=()):
+  """[{type, value, source[, note, added]}] for a malicious or suspected sample (a claim maps
+  to ATT&CK, notes have an Indicators section, or the agent added some); None when not
+  applicable. Agent rows (indicators.jsonl) come last, marked "added": true."""
+  if not (any(c.get("attack") for c in claims if c.get("status") != "rejected") or notes_have or added):
     return None
   idn, sg = f.get("identity", {}), f.get("signing", {})
   b, net = f.get("behavior", {}), f.get("network", {})
@@ -98,10 +101,11 @@ def indicators(f, claims, notes_have):
   for h in net.get("hosts", [])[:30]:
     for u in h["urls"][:4]:
       rows.append({"type": "URL", "value": u, "source": (h.get("url_refs") or {}).get(u) or "dex strings (scan.txt)"})
+  rows += [dict(r, added=True) for r in added]
   return rows
 
 
-def export(name, facts, claims, notes):
+def export(name, facts, claims, notes, added=()):
   """the report as data"""
   f = facts or {}
   title, ns, threats, _problems = parse_notes(notes)
@@ -128,7 +132,7 @@ def export(name, facts, claims, notes):
     "name": name,
     "title": title or ("%s %s" % (idn.get("package", name), idn.get("versionName", ""))).strip(),
     "sources": {"facts": "work/%s/facts.json" % name, "claims": "reports/%s/claims.jsonl" % name,
-                "notes": "reports/%s/notes.md" % name},
+                "notes": "reports/%s/notes.md" % name, "indicators": "reports/%s/indicators.jsonl" % name},
     "facts_present": facts is not None,
     "facts": {k: v for k, v in f.items() if k not in ("schema", "name")},
     "findings": [finding(n, c) for n, c in seq if c.get("status") == "confirmed"],
@@ -136,7 +140,7 @@ def export(name, facts, claims, notes):
     "rejected": [c.get("id") for c in claims if c.get("status") == "rejected"],
     "claims_summary": dict({s: sum(1 for c in claims if c.get("status") == s) for s in ("confirmed", "draft", "rejected")},
                            verified=sum(1 for c in claims if c.get("verdict"))),
-    "indicators": indicators(f, claims, bool(ns.get("Indicators"))),
+    "indicators": indicators(f, claims, bool(ns.get("Indicators")), added),
     "notes": ns,
     "threat_notes": threats,
     "evidence_base": "paths are relative to work/%s/ unless they start with work/ or .dec/.emb" % name,
@@ -183,11 +187,15 @@ def main():
   if problems:
     print("\n".join(problems), file=sys.stderr)
     sys.exit("claims.jsonl has schema problems: not built (./cupella claims-check.py %s)" % name)
+  added, ip = cc.load_indicators(os.path.join(src, "indicators.jsonl"))
+  if ip:
+    print("\n".join(ip), file=sys.stderr)
+    sys.exit("indicators.jsonl has schema problems: not built (./cupella claims-check.py %s)" % name)
   notes = ""
   if os.path.isfile(os.path.join(src, "notes.md")):
     with open(os.path.join(src, "notes.md"), errors="replace") as fh:
       notes = fh.read()
-  rep = export(name, facts, claims, notes)
+  rep = export(name, facts, claims, notes, added)
   warn = parse_notes(notes)[3] + problems_of(rep)
   if facts is None:
     warn.append("no work/%s/facts.json: generated parts are empty (run ./cupella facts.py %s)" % (name, name))

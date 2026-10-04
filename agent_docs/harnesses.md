@@ -99,8 +99,8 @@ agent needs; proposals go to the workspace's `proposals/`, inside the sandbox, a
 - The classifier has also stopped readers at the very end, while they wrote their final
   summary of a banking trojan's SMS and command code (two of four readers, 2026-10-04):
   the reading was done and only the summary was lost. Readers now write each finding
-  to `work/<name>/progress/<role>-findings.md` as they confirm it and end with a
-  one-line message (`prompts/read-area.md`).
+  as a draft claim to `work/<name>/progress/<role>-claims.jsonl` as they confirm it and
+  end with a one-line message (`prompts/read-area.md`).
 - It has stopped the main agent writing a report in large pieces (table below).
   Nothing from a stopped response is kept. The main agent now writes one section per
   write and takes the Findings and Indicators of malware from a reader's findings file

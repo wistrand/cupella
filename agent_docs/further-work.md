@@ -144,18 +144,15 @@ From the agent benchmarks; each is small and testable on the same samples.
   [harnesses.md](harnesses.md) and have not run an analysis. Run one sample and one
   benchmark slice through each before claiming benchmark parity.
 
-- Rendered reports (pilot since 2026-10-04, [design-report.md](design-report.md) "Rendered
-  reports"): `facts.py`, `claims-check.py`, `report-build.py` (JSON), `report-render.py`
-  (markdown from the JSON); one malware report
-  (08ea5fb9...) rendered and verified (verdicts per claim through `claims-merge.py`;
-  12 holds, 2 overstated, both corrected), two benign apps previewed with `--stdout` (F-Droid, maid). Open:
-  readers write draft claims (`prompts/read-area.md` still asks for a findings text file;
-  the `reader` role may write only `progress/`, so drafts would go to
-  `progress/<role>-claims.jsonl` for the main agent to move); the benchmark prompts; the skeleton
-  from `unpack.sh` replaced by a render; migrating the other reports in `reports/`;
-  `lead-eval.py` reading claims instead of parsing "## Findings"; `./cupella gate` and
-  `./cupella check` after the `scan.sh` change; an HTML renderer from the JSON (escape every
-  value, no links to indicators, a restrictive CSP).
+- Rendered reports (since 2026-10-04, [design-report.md](design-report.md) "Rendered
+  reports"; the default for new analyses): `facts.py`, `claims-check.py`, `report-build.py`
+  (JSON), `report-render.py` (markdown from the JSON), `claims-promote.py` (reader drafts),
+  `claims-merge.py` (verifier verdicts), `indicators.jsonl`. One malware report (08ea5fb9...)
+  rendered and verified (12 holds, 2 overstated, both corrected); two benign apps previewed
+  with `--stdout`. Open: a fresh-session end-to-end analysis with the docs alone; the
+  benchmark prompts; migrating the other reports in `reports/`; `lead-eval.py` reading
+  the JSON instead of parsing "## Findings"; an HTML renderer from the JSON (escape every
+  value, no links to indicators, a restrictive CSP); behavior facts for Dart and Hermes code.
 
 ## Anti-analysis
 

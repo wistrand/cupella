@@ -9,6 +9,12 @@ contains, how it is signed, and anything that looks odd. The agent unpacks and
 decompiles the APK with jadx and apktool, then reads the result. Nothing from the APK
 is executed or installed.
 
+About half of the work in this repository is the method, not any one APK. Every step an
+analysis needed and no script covered becomes a script, and changes to the scan and
+lead scripts have to pass a benchmark gate before they stay. The agent proposes changes; you decide. An agent
+that has just read hostile code does not get to edit the tools the next analysis trusts.
+Only the front end and the benchmarks are specific to APKs.
+
 ## Requirements
 
 - Docker, with the current user allowed to run containers.
@@ -151,8 +157,10 @@ libraries, running a fixed set of pattern searches, and finding functions by the
 place in the call graph (entry points and what they reach, dispatch tables, loops,
 decoders). The agent then reads the code behind each lead, works
 out what it does and whether it is on by default, and writes the report with evidence
-for every claim. What an agent run learns goes back into the scripts, so each analysis
-makes the next one better (from a workspace, through `proposals/`).
+for every claim. What an agent run learns goes back into the scripts: an extraction it
+had to do by hand becomes a script or a pattern, checked with `./cupella gate` against
+the benchmarks before it is kept. From a workspace this goes through `proposals/`, and
+you decide in the checkout which ones are applied.
 
 Malformed APKs (fake ZIP encryption, tampered manifests) are read the way Android
 reads them. Payloads hidden in assets under misleading names are found by content and

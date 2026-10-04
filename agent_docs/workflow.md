@@ -109,28 +109,30 @@ than "not needed", name it under "Analysis coverage".
 A session can end at any point (token limit, rate limit, crash). Work only in the
 agent's context is then lost. In every mode:
 
-- `./cupella unpack.sh` writes `reports/<name>.md` as a skeleton when no report exists:
-  the section headings of [design-report.md](design-report.md), Identity and Signing
-  filled from `triage.txt`, every other section reading "not reached"
-  (`scripts/report-skeleton.py`). Check those two sections and go on from there; never
-  delete the skeleton.
-- Fill a section as soon as its content is settled, not at the end. A finding goes in
-  when its code is read and its gate checked; mark it `likely` if a step is still open.
-- Never write more than one report section or one finding per write. A write that is
-  interrupted (session end, safety classifier, malformed tool call) then loses only
-  that piece, and `progress/main.md` names where to resume.
-- For a malicious or suspected sample, the Findings and Indicators sections come from
-  a reader subagent (`reader` role, `prompts/read-area.md`) that writes them finding by
-  finding to `work/<name>/progress/reader-findings.md`; the main agent checks each key
-  claim in the code and moves the findings into the report one at a time. The main
-  agent writes the other sections itself. A main agent describing malware behavior at
-  length can be stopped by the model provider's safety classifier, and everything in
-  that response is lost.
-- Pilot, rendered reports ([design-report.md](design-report.md) "Rendered reports"):
-  appending one confirmed claim to `reports/<name>/claims.jsonl` is the checkpoint for a
-  finding, and `notes.md` holds the few prose blocks. The tables come from `facts.json`,
-  so the agent writes no section by hand. Finish with `./cupella claims-check.py <name>`,
-  `./cupella report-build.py <name>` (JSON, then markdown), `./cupella cite-check.py <name>`.
+- A new analysis is a rendered report ([design-report.md](design-report.md) "Rendered
+  reports"): `./cupella unpack.sh` creates `reports/<name>/` (a stub `notes.md`, an empty
+  `claims.jsonl`) when no report exists, and `./cupella scan.sh` builds
+  `reports/<name>.json` and `reports/<name>.md` from `facts.json`. Every generated section
+  is filled from then on; Summary and Findings read "not reached" until written. Never
+  delete `reports/<name>/`.
+- One claim appended to `reports/<name>/claims.jsonl` is the checkpoint for a finding,
+  written when its code is read and its gate checked (`likely` if a step is still open).
+  Prose goes into `notes.md` one section at a time, indicators the facts cannot hold into
+  `indicators.jsonl`. A write that is interrupted (session end, safety classifier,
+  malformed tool call) then loses only that piece, and `progress/main.md` names where to
+  resume. Rebuild with `./cupella report-build.py <name>` whenever it helps to see the report.
+- For a malicious or suspected sample, findings come from a reader subagent (`reader`
+  role, `prompts/read-area.md`) that writes draft claims to
+  `work/<name>/progress/<role>-claims.jsonl`. The main agent checks each draft's key
+  steps in the code and promotes it with `./cupella claims-promote.py <name> <role> D<n>`
+  (`--list` shows the drafts). A main agent describing malware behavior at length can be
+  stopped by the model provider's safety classifier, and everything in that response is
+  lost; short claims and promotion keep that text out of the main agent's responses.
+- Finish with `./cupella claims-check.py <name>`, `./cupella report-build.py <name>`,
+  `./cupella cite-check.py <name>`.
+- Hand-written reports (a `reports/<name>.md` without `reports/<name>/`, from before
+  rendering): fill one section or one finding per write, as soon as it is settled; never
+  delete a section, leave it "not reached".
 - When a write is stopped by the safety classifier, never retry it in that session,
   reworded or through a subagent. Note the stop in `progress/main.md` and tell the user;
   a fresh session resumes from there ([harnesses.md](harnesses.md)).
@@ -147,8 +149,9 @@ agent's context is then lost. In every mode:
   `work/<prefix>*/progress/main.md` (and in a workspace, its own `work/`). Never search
   session transcripts for it.
 - A new session continuing the work reads `progress/main.md`, `progress/main-findings.md`,
-  any `progress/*-findings.md` of readers, and the partial report first, then goes on
-  from the first section still "not reached". Re-read code only to check an entry, not
+  readers' `progress/*-claims.jsonl` (and `*-findings.md` from before), the sources in
+  `reports/<name>/`, and the partial report first, then goes on from the first section
+  still "not reached". Re-read code only to check an entry, not
   to rebuild it. This is the one case
   where reading an earlier report of the same sample is allowed: it is this analysis's
   own unfinished output.
@@ -210,7 +213,8 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
   key or algorithm, and check that each child in `outputs.txt` decompiled.
 - Name subagent output files after their content, never `report*`: Claude Code, for one, refuses
   a subagent's write to a file named like a report ([gotchas.md](gotchas.md)).
-- Reader output is `work/<name>/progress/<role>-findings.md`, written finding by finding;
+- Reader output is `work/<name>/progress/<role>-claims.jsonl`, draft claims written one
+  by one, which the main agent promotes with `./cupella claims-promote.py`;
   the final message is one line. A reader that summarizes malware behavior in its final
   message can be stopped by a safety classifier while writing it, and the summary is
   lost ([harnesses.md](harnesses.md)).

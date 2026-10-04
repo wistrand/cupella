@@ -27,7 +27,8 @@ work/<name>/  triage.txt, manifest-summary.txt, native-summary.txt, apkid.txt,
               trackers.txt, flutter-summary.txt and dart/ (Flutter), hermes/ (React
               Native), raw/, apktool/, jadx/, dex/, sig/, embedded.txt, unlocked.txt,
               encrypted-left.txt, zip-anomalies.txt (malformed ZIP only),
-              report-skeleton.md (copied to reports/<name>.md when no report exists)
+              report-skeleton.md (headings for a hand-written report; a new analysis
+              gets reports/<name>/ instead, built into a report by scan.sh)
 work/<name>.emb<k>/  each payload found inside the APK or decrypted by script, unpacked
               as a sample
               (work/_reference/ caches downloads of reference-check.py)
@@ -42,7 +43,7 @@ work/<name>/quark-leads.txt        leads (Quark-Engine rule matches by method)
 work/<name>/jadx-retry/            methods jadx failed on, in simple mode
    |  agent reads the code behind the leads
    v
-reports/<name>/claims.jsonl, notes.md   (pilot: agent sources)
+reports/<name>/claims.jsonl, notes.md, indicators.jsonl   (agent sources)
    |  ./cupella report-build.py
    v
 reports/<name>.json                the report as data; reports/<name>.md rendered from it

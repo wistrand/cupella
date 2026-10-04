@@ -2,7 +2,7 @@
 
 ## Contents
 - Purpose
-- Rendered reports (pilot)
+- Rendered reports
 - Structure
 - Behavior maps
 - Evidence rules
@@ -16,10 +16,12 @@ should learn what the APK is and what in it deserves attention, and be able to c
 each claim. The structure is fixed so reports for different APKs can be compared
 section by section.
 
-## Rendered reports (pilot)
+## Rendered reports
 
-A report can be built instead of written. It applies when `reports/<name>/` exists; other
-reports are still written by hand in the structure below. Two steps:
+A report is built, not written: the default for every new analysis (`./cupella unpack.sh`
+creates `reports/<name>/`, `./cupella scan.sh` builds it). It applies when `reports/<name>/`
+exists; reports from before rendering are still written by hand in the structure below.
+Two steps:
 
 1. `./cupella report-build.py <name>` combines three sources, each with one owner, into
    `reports/<name>.json` (format `cupella-report/1`). The JSON is the report.
@@ -31,6 +33,7 @@ reports are still written by hand in the structure below. Two steps:
 |--------------------------------|--------------|-------|
 | `work/<name>/facts.json`       | scripts (`facts.py`, run by `scan.sh`) | identity, signing, tools, coverage, permissions, components against the dex, hosts, libraries, native code, behavior facts |
 | `reports/<name>/claims.jsonl`  | agents       | one finding per line; fields in `scripts/claims-check.py` |
+| `reports/<name>/indicators.jsonl` | agent (optional) | indicators the facts cannot hold: decoded hosts, keys, names; fields in `scripts/claims-check.py` |
 | `reports/<name>/notes.md`      | main agent   | Summary, inferences, agent setup, open questions, method changes: `## <section>` blocks, `## Threat: <name>` blocks |
 
 - Never edit `reports/<name>.json` or a rendered `reports/<name>.md` (its marker line says
@@ -42,6 +45,9 @@ reports are still written by hand in the structure below. Two steps:
   "api": "<label>"}` (a row of the Behavior facts table). The renderer prints chain and gate.
 - `status` `draft` renders under "Not yet confirmed"; `confirmed` under its threat;
   `rejected` not at all.
+- Readers (`prompts/read-area.md`) write draft claims (ids `D<n>`) to
+  `work/<name>/progress/<role>-claims.jsonl`; `./cupella claims-promote.py <name> <role>
+  D<n>...` copies the ones the main agent checked into `claims.jsonl` with the next `F` ids.
 - Verification (`prompts/verify-report.md`) writes `work/<name>/progress/verify-verdicts.jsonl`,
   one verdict per claim; `./cupella claims-merge.py <name>` merges them into the claims'
   `verdict` field (the previous file stays as `claims.jsonl.prev`). Before editing a claim
