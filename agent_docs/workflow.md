@@ -73,7 +73,7 @@ analysis, or when the answer needs more than a few cited lines.
    here; read such code in `jadx-strings/`.
 3. **Read the leads.** In order: injection section of `scan.txt` (anything there is a
    finding), "Known family markers", entry points and environment checks in
-   `structure-leads.txt`, `flows.txt`, `scan.txt` section by section, then the app-scope
+   `structure-leads.txt`, `flows.txt`, `behavior-facts.txt`, `scan.txt` section by section, then the app-scope
    lines of `quark-leads.txt` that no other source named. Read the code
    behind every lead you report. Use `./cupella xref.py` for callers and callees, and
    `./cupella dex-disasm.py` where jadx failed. Before reporting a feature, check its gate:
@@ -109,15 +109,47 @@ than "not needed", name it under "Analysis coverage".
 A session can end at any point (token limit, rate limit, crash). Work only in the
 agent's context is then lost. In every mode:
 
-- Right after stage 1, write `reports/<name>.md` as a skeleton: the section headings of
-  [design-report.md](design-report.md), Identity and Signing filled from `triage.txt`,
-  every other section reading "not reached".
+- `./cupella unpack.sh` writes `reports/<name>.md` as a skeleton when no report exists:
+  the section headings of [design-report.md](design-report.md), Identity and Signing
+  filled from `triage.txt`, every other section reading "not reached"
+  (`scripts/report-skeleton.py`). Check those two sections and go on from there; never
+  delete the skeleton.
 - Fill a section as soon as its content is settled, not at the end. A finding goes in
   when its code is read and its gate checked; mark it `likely` if a step is still open.
+- Never write more than one report section or one finding per write. A write that is
+  interrupted (session end, safety classifier, malformed tool call) then loses only
+  that piece, and `progress/main.md` names where to resume.
+- For a malicious or suspected sample, the Findings and Indicators sections come from
+  a reader subagent (`reader` role, `prompts/read-area.md`) that writes them finding by
+  finding to `work/<name>/progress/reader-findings.md`; the main agent checks each key
+  claim in the code and moves the findings into the report one at a time. The main
+  agent writes the other sections itself. A main agent describing malware behavior at
+  length can be stopped by the model provider's safety classifier, and everything in
+  that response is lost.
+- Pilot, rendered reports ([design-report.md](design-report.md) "Rendered reports"):
+  appending one confirmed claim to `reports/<name>/claims.jsonl` is the checkpoint for a
+  finding, and `notes.md` holds the few prose blocks. The tables come from `facts.json`,
+  so the agent writes no section by hand. Finish with `./cupella claims-check.py <name>`,
+  `./cupella report-build.py <name>` (JSON, then markdown), `./cupella cite-check.py <name>`.
+- When a write is stopped by the safety classifier, never retry it in that session,
+  reworded or through a subagent. Note the stop in `progress/main.md` and tell the user;
+  a fresh session resumes from there ([harnesses.md](harnesses.md)).
 - Append one line per step to `work/<name>/progress/main.md` ("<step number> <what was
   done or found, next step>"), as subagents do.
-- A new session continuing the work reads `progress/main.md` and the partial report
-  first, then goes on from the first section still "not reached". This is the one case
+- Write what reading found to `work/<name>/progress/main-findings.md` as soon as each
+  behavior is confirmed, one entry per behavior: what it does, where (`path:line` for
+  each step of the chain), its gate and whether it passes, and the confidence label.
+  Also record settled facts the report needs that are not findings (endpoints, the
+  scope, a tool failure). A step line in `progress/main.md` names the classes read;
+  the entry holds the content. A session that ends between reading and writing then
+  loses nothing: the report is written from this file, not by reading again.
+- A request to resume names a sample, often by a hash or name prefix: look for
+  `work/<prefix>*/progress/main.md` (and in a workspace, its own `work/`). Never search
+  session transcripts for it.
+- A new session continuing the work reads `progress/main.md`, `progress/main-findings.md`,
+  any `progress/*-findings.md` of readers, and the partial report first, then goes on
+  from the first section still "not reached". Re-read code only to check an entry, not
+  to rebuild it. This is the one case
   where reading an earlier report of the same sample is allowed: it is this analysis's
   own unfinished output.
 - When stopped short, say so in the report's Summary and "Analysis coverage", and leave
@@ -165,7 +197,7 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
 |--------------|-------------|------------------------------|-----------------------------------------|
 | Decryption   | `decryptor` | `prompts/decrypt.md`         | code, payload, or strings encrypted; one agent per layer |
 | Verification | `reader`    | `prompts/verify-report.md`   | required for security reviews and malware; recommended for every full report |
-| Reading      | `reader`    | `prompts/read-area.md`       | large apps: one agent per area, in parallel; check their key claims in the code |
+| Reading      | `reader`    | `prompts/read-area.md`       | large apps: one agent per area, in parallel; malware: Findings and Indicators ("Checkpoints"); check their key claims in the code |
 | Benchmarks   | `reader`    | `prompts/bench/*.md`         | only for benchmark runs ([benchmarks.md](benchmarks.md)) |
 
 - When the harness cannot restrict a subagent's tools as the role says, the role's

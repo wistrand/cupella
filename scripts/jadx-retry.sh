@@ -50,8 +50,10 @@ with open(os.path.join(out, "jadx.log"), errors="replace") as f:
     if raw is None:
       continue
     top = raw.split("$")[0]
+    # "defpackage" is jadx's name for the unnamed package: classes without a dot
     if prefixes and "." not in prefixes \
-        and not any(top.startswith(p.replace("/", ".").rstrip(".")) for p in prefixes):
+        and not any(("." not in top) if p.strip("/.") == "defpackage" else top.startswith(p.replace("/", ".").rstrip("."))
+                    for p in prefixes):
       continue
     todo.setdefault(top, set()).add("%s=%s" % (m.group(1), raw))
 for top in sorted(todo):

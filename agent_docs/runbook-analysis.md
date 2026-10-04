@@ -270,6 +270,36 @@ agent missed these or reported fixed apps as vulnerable:
 - ContentProvider `call()`: the provider's read and write permissions do not apply to
   it; it needs its own check.
 
+## Behavior facts
+
+`scan.sh` also writes `behavior-facts.txt` (`scripts/behavior-facts.py`): facts about the
+code in a form a finding can cite line by line, so a finding can be a short claim with
+pointers rather than a long description. `facts.py` (run by `scan.sh`) writes it and puts
+the same facts in `facts.json`, from which a rendered report's tables come
+([design-report.md](design-report.md) "Rendered reports"). Sections:
+
+- Components and the dex: each manifest component, and whether its class is in the dex.
+  A launcher class that is missing means the app cannot start as shipped unless loaded
+  code supplies it; dex classes with the same simple name are listed, and their
+  callbacks count as entry points below ("by simple name").
+- Entry points: component callbacks, `@JavascriptInterface` methods, and `on*` callbacks
+  no scanned code calls, each with the listed APIs it reaches (NFC, WebSocket, SMS,
+  location, ...) and the shortest chain to each. `*` marks a step into an R8 merged
+  lambda class: from library callbacks those steps are usually false edges
+  ([gotchas.md](gotchas.md)). "In its bytecode" means the call is in a lambda body jadx
+  shows elsewhere in the file; read that lambda.
+- Functions using a listed API that no entry point reaches: dead code, or code reached
+  through reflection or a library listener.
+- Permission gates: the permission each used API needs and whether the manifest
+  requests it. "NOT REQUESTED" makes the feature present but inert.
+- Messages: JSON keys written and read and string literals compared, per function: the
+  wire format of a C2 or relay protocol.
+- WebView: settings, JavaScript interface names, `loadUrl` and `evaluateJavascript`
+  arguments.
+
+Every line is a fact about the code, not a finding: read the code behind each before a
+finding rests on it, and check each chain step as for a behavior map.
+
 ## Structure leads
 
 `scan.sh` also writes `structure-leads.txt`: functions found from the call graph and

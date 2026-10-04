@@ -124,8 +124,10 @@ string_section=$(timeout 900 python3 "$root/scripts/stringfog.py" "$name" 2>&1 |
 
   echo
   echo "## jadx failures in scope (methods)"
+  # "defpackage" is jadx's name for the unnamed package: its classes have no dot in the log
   grep -a 'ERROR' "$out/jadx.log" 2>/dev/null | grep -o 'method: [^(]*' | sort -u \
-    | grep -F -f <(printf '%s\n' "${scopes[@]}" | tr '/' '.') | head -n "$max" || true
+    | { if printf '%s\n' "${scopes[@]}" | grep -qx defpackage; then grep -E -e '^method: [^.]+\.[^.]+$' -e "$(printf '%s\n' "${scopes[@]}" | grep -vx defpackage | tr '/' '.' | sed 's/[.]/\\./g' | paste -sd'|' | sed 's/^$/^$-never/')"
+        else grep -F -f <(printf '%s\n' "${scopes[@]}" | tr '/' '.'); fi; } | head -n "$max" || true
 
   if [ -f "$out/dex/strings.txt" ]; then
     echo
@@ -178,6 +180,8 @@ fi
 echo "wrote work/$name/scan.txt ($(wc -l < "$out/scan.txt") lines)"
 timeout "${APK_TOOL_TIMEOUT:-1800}" python3 "$root/scripts/structure-leads.py" "$name" "${scopes[@]}" || echo "structure-leads failed or timed out"
 timeout "${APK_TOOL_TIMEOUT:-1800}" python3 "$root/scripts/flows.py" "$name" "${scopes[@]}" || echo "flows failed or timed out"
+# facts.json and behavior-facts.txt: the script-owned data report-render.py turns into tables
+timeout "${APK_TOOL_TIMEOUT:-1800}" python3 "$root/scripts/facts.py" "$name" "${scopes[@]}" || echo "facts failed or timed out"
 # Quark-Engine rule matches by calling method (quark-leads.txt). The Quark run is cached
 # in tools/ (same APK, same pinned rules): only the first scan of a sample pays for it.
 if [ -n "${APK_TOOLS:-}" ]; then

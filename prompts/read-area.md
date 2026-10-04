@@ -8,7 +8,7 @@ stopped. Typical areas: C2 and commands; accessibility, overlays, phishing; data
 SMS, calls; persistence and the dropper; native code. -->
 You are reading one area of an Android app's decompiled code, statically, as one of several readers. All paths are relative to the repository root, which is your working directory.
 
-Sample: work/{NAME}/. Read code from work/{NAME}/jadx-strings/ when a file is there (jadx sources with each decrypted string call followed by /* = "plaintext" */, same line numbers as jadx/sources/), else from work/{NAME}/jadx/sources/. Manifest: work/{NAME}/apktool/AndroidManifest.xml and manifest-summary.txt. Leads: work/{NAME}/scan.txt (read its sections "Permissions the code names but the manifest does not request" and "Native libraries the code names but the APK does not ship" before claiming a feature works), structure-leads.txt, flows.txt, quark-leads.txt.
+Sample: work/{NAME}/. Read code from work/{NAME}/jadx-strings/ when a file is there (jadx sources with each decrypted string call followed by /* = "plaintext" */, same line numbers as jadx/sources/), else from work/{NAME}/jadx/sources/. Manifest: work/{NAME}/apktool/AndroidManifest.xml and manifest-summary.txt. Leads: work/{NAME}/behavior-facts.txt (entry points with the APIs they reach, permission gates, message keys: start here), scan.txt (read its sections "Permissions the code names but the manifest does not request" and "Native libraries the code names but the APK does not ship" before claiming a feature works), structure-leads.txt, flows.txt, quark-leads.txt.
 
 Your area: {AREA}
 

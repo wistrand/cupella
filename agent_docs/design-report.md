@@ -2,6 +2,7 @@
 
 ## Contents
 - Purpose
+- Rendered reports (pilot)
 - Structure
 - Behavior maps
 - Evidence rules
@@ -14,6 +15,41 @@
 should learn what the APK is and what in it deserves attention, and be able to check
 each claim. The structure is fixed so reports for different APKs can be compared
 section by section.
+
+## Rendered reports (pilot)
+
+A report can be built instead of written. It applies when `reports/<name>/` exists; other
+reports are still written by hand in the structure below. Two steps:
+
+1. `./cupella report-build.py <name>` combines three sources, each with one owner, into
+   `reports/<name>.json` (format `cupella-report/1`). The JSON is the report.
+2. `report-render.py` (run by `report-build.py`, or alone) turns the JSON into
+   `reports/<name>.md`, a view in the structure below. Other formats are other renderers
+   of the same JSON; none reads the sources.
+
+| Source                         | Owner        | Holds |
+|--------------------------------|--------------|-------|
+| `work/<name>/facts.json`       | scripts (`facts.py`, run by `scan.sh`) | identity, signing, tools, coverage, permissions, components against the dex, hosts, libraries, native code, behavior facts |
+| `reports/<name>/claims.jsonl`  | agents       | one finding per line; fields in `scripts/claims-check.py` |
+| `reports/<name>/notes.md`      | main agent   | Summary, inferences, agent setup, open questions, method changes: `## <section>` blocks, `## Threat: <name>` blocks |
+
+- Never edit `reports/<name>.json` or a rendered `reports/<name>.md` (its marker line says
+  so); edit the sources and build again.
+- Never retype a value `facts.json` holds into notes or claims; notes add only what the
+  scripts cannot know (judgment, inference, agent setup).
+- A claim is a short statement of what reading the code confirmed, with evidence items:
+  `{"ref": "<path>:<line>", "quote": "<text on that line>"}` or `{"entry": "<Class.method>",
+  "api": "<label>"}` (a row of the Behavior facts table). The renderer prints chain and gate.
+- `status` `draft` renders under "Not yet confirmed"; `confirmed` under its threat;
+  `rejected` not at all. Verification sets `verdict` per claim.
+- The JSON holds the facts, the findings in report order (numbered) with entry evidence
+  resolved to its Behavior facts row, drafts, rejected ids, claim counts, indicators, and
+  the notes as markdown per section. Use it for other tools instead of parsing the
+  markdown. Indicators that notes add are only in `notes.Indicators`, as text.
+- Before building: `./cupella claims-check.py <name>` (schema, refs, quotes against the
+  code). After: `./cupella cite-check.py <name>` on the markdown.
+- `report-build.py <name> --stdout` prints the JSON and writes nothing (`--md`: the
+  markdown); without `reports/<name>/` it previews what `facts.json` alone gives.
 
 ## Structure
 
@@ -68,8 +104,15 @@ provenance (build paths, reference-check result) and how
 each was identified; JNI surface of app-specific libraries; which functions were
 read and how (disassembly, decompilation), which were not.
 
+## Behavior facts
+Rendered reports only, generated from facts.json: entry points with the APIs they reach
+and one chain each, message keys, WebView interfaces, unreached API use. Facts about the
+code, not findings.
+
 ## Findings
-Numbered, most significant first. Each: what, where (evidence), why it matters,
+Numbered, most significant first. Point to rows of "Behavior facts" for chains, gates,
+and message keys instead of repeating them; a finding says what reading the code
+confirmed. Each: what, where (evidence), why it matters,
 confidence. For a malicious or suspected sample, also name its behavior class and the
 MITRE ATT&CK Mobile technique IDs that fit (see runbook-analysis "Malware samples"),
 and group the findings under the threats they serve (for example "Credential theft",

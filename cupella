@@ -485,7 +485,43 @@ case "$cmd" in
     done
     "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-decryptor.sh --exec "$n" \
       && offline "$image" scripts/run-decryptor.sh --unpack "$n" ;;
-  lead-eval.py | cite-check.py | evidence-bundle.py)
+  report-build.py | report-render.py)
+    # report-build.py: reports/<name>.json from facts.json (scripts) and reports/<name>/
+    # (agent), then report-render.py: reports/<name>.md from that JSON alone. Each in a
+    # container that sees only its inputs and its one output file, no APK data.
+    n=""
+    for a in "$@"; do case "$a" in -*) ;; *) n=$a; break ;; esac; done
+    [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. ]] || { echo "usage: ./cupella $cmd <name> [options]" >&2; exit 1; }
+    for ext in md json; do
+      [ ! -L "$ws/reports/$n.$ext" ] || { echo "reports/$n.$ext is a symlink" >&2; exit 1; }
+    done
+    stdout=0
+    [[ " $* " == *" --stdout "* ]] && stdout=1
+    if [ "$cmd" = report-build.py ]; then
+      mounts=()
+      [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] && mounts+=(-v "$ws/reports/$n:/repo/reports/$n:ro")
+      f="$ws/work/$n/facts.json"
+      [ -f "$f" ] && [ ! -L "$f" ] && mounts+=(-v "$f:/repo/work/$n/facts.json:ro")
+      if [ "$stdout" = 0 ]; then
+        [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/ (claims.jsonl, notes.md)" >&2; exit 1; }
+        [ -e "$ws/reports/$n.json" ] || : > "$ws/reports/$n.json"
+        mounts+=(-v "$ws/reports/$n.json:/repo/reports/$n.json")
+      fi
+      "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/report-build.py "$@" || exit
+      [ "$stdout" = 1 ] && exit 0
+      # render the markdown view; --replace carries over (a hand-written report)
+      rargs=("$n")
+      [[ " $* " == *" --replace "* ]] && rargs+=(--replace)
+      set -- "${rargs[@]}"
+    fi
+    [ -s "$ws/reports/$n.json" ] || { echo "no reports/$n.json: run ./cupella report-build.py $n" >&2; exit 1; }
+    mounts=(-v "$ws/reports/$n.json:/repo/reports/$n.json:ro")
+    if [[ " $* " != *" --stdout "* ]]; then
+      [ -e "$ws/reports/$n.md" ] || : > "$ws/reports/$n.md"
+      mounts+=(-v "$ws/reports/$n.md:/repo/reports/$n.md")
+    fi
+    exec "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/report-render.py "$@" ;;
+  lead-eval.py | cite-check.py | evidence-bundle.py | claims-check.py)
     offline -v "$ws/reports:/repo/reports:ro" "$image" "scripts/$cmd" "$@" ;;
   bench-*.py)
     mkdir -p "$root/bench"
@@ -499,6 +535,12 @@ case "$cmd" in
     # a Flutter app's logic is in libapp.so: continue with the Dart step
     for a in "$@"; do apk=$a; done
     name=$(basename "$apk" .apk)
+    # the report skeleton (scripts/report-skeleton.py) becomes reports/<name>.md on the
+    # host, never overwriting a report; the container that read the APK cannot write reports/
+    skel="$ws/work/$name/report-skeleton.md"
+    if [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] && [ -f "$skel" ] && [ ! -L "$skel" ] && [ ! -e "$ws/reports/$name.md" ] && [ ! -L "$ws/reports/$name.md" ]; then
+      cp "$skel" "$ws/reports/$name.md" && echo "== wrote reports/$name.md (skeleton: Identity and Signing filled)"
+    fi
     if [ -f "$ws/work/$name/raw/lib/arm64-v8a/libapp.so" ] && [ ! -d "$ws/work/$name/dart/asm" ]; then
       echo "== Flutter app: running the Dart analysis (./cupella flutter-decompile.sh $name)"
       dart_decompile "$name" || echo "== Dart analysis did not complete; the rest of the unpack output is usable"

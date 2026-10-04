@@ -360,5 +360,6 @@ if ls "$out"/raw/assets/*.bundle "$out"/raw/assets/*.hbc > /dev/null 2>&1; then
   echo "== React Native bundle: running hermes-decompile.sh"
   "$root/scripts/hermes-decompile.sh" "$name" || echo "hermes-decompile failed"
 fi
-echo "== wrote work/$name/triage.txt, manifest-summary.txt, native-summary.txt, apkid.txt, trackers.txt"
+python3 "$root/scripts/report-skeleton.py" "$name" > /dev/null || echo "report-skeleton failed"
+echo "== wrote work/$name/triage.txt, manifest-summary.txt, native-summary.txt, apkid.txt, trackers.txt, report-skeleton.md"
 echo "next: ./cupella scan.sh $name [source-subdir ...]"

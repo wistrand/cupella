@@ -54,6 +54,7 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `unpack.sh`                   | stage 1: identity, unpack, decode, decompile, embedded payloads, `triage.txt` |
 | `scan.sh`                     | stage 2: pattern searches (`scan.txt`), structure leads, flows, jadx retry; the pattern table lives here |
 | `apkunzip.py`                 | extracts every APK as Android reads it (fake encryption, shadowed entries), under decompression limits, without symlinks; writes `repaired.apk` when it finds anomalies |
+| `report-skeleton.py`          | `work/<name>/report-skeleton.md`: report headings, Identity and Signing from `triage.txt`; `./cupella unpack.sh` copies it to `reports/<name>.md` on the host when no report exists |
 | `class-coverage.py`           | classes jadx did not produce, classes defined in more than one dex, misleading or overlong class names; in `triage.txt` |
 | `axml2xml.py`                 | binary XML to text, tolerant of tampered manifests; fallback when apktool fails |
 | `dexlist.py`                  | class names and string pool from dex files, no decompiler needed        |
@@ -75,6 +76,11 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `jadx-retry.sh`               | re-decompiles failed methods in jadx's simple mode; an inner class jadx writes as its own file (a Kotlin lambda) is retried by itself |
 | `structure-leads.py`          | leads from call graph and control structure: entry points, coordinators, dispatch, loops, decoders, capability map |
 | `flows.py`                    | source-to-sink data flows in bytecode (`flows.txt`)                     |
+| `behavior-facts.py`           | citable facts for Findings (`behavior-facts.txt`): manifest components vs. dex, entry points with the APIs they reach and one chain each, API use no entry point reaches, permission gates, JSON keys and compared literals, WebView setup; `facts.py` calls it |
+| `facts.py`                    | `facts.json`: the script-owned data of a report (identity, signing, tools, coverage, permissions, components, hosts, libraries, native, behavior facts); also writes `behavior-facts.txt`; run by `scan.sh` |
+| `claims-check.py`             | checks `reports/<name>/claims.jsonl`: schema (documented in the script), refs, quotes against the code, entry rows in `facts.json` |
+| `report-build.py`             | builds `reports/<name>.json` (`cupella-report/1`, the report as data) from `facts.json`, `claims.jsonl`, `notes.md` (pilot), then `./cupella` runs `report-render.py`; each in a container with only its inputs and output; `--stdout [--md]` previews |
+| `report-render.py`            | renders `reports/<name>.json` as `reports/<name>.md`; reads nothing else |
 
 On demand:
 
@@ -129,6 +135,11 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella manifest-summary.py <name>              # rerun alone after a manifest re-decode
 ./cupella structure-leads.py <name> [scope ...]   # rerun after native-decompile.sh
 ./cupella flows.py <name> [scope ...]             # rerun alone after changing sources or sinks
+./cupella behavior-facts.py <name> [--depth N] [scope ...]   # rerun alone; scan.sh runs it through facts.py
+./cupella facts.py <name> [scope ...]             # facts.json; scan.sh runs it
+./cupella claims-check.py <name>                  # rendered reports: claims schema, refs, quotes
+./cupella report-build.py <name> [--replace|--stdout [--md]]   # reports/<name>.json from facts, claims, notes; then the .md
+./cupella report-render.py <name> [--replace|--stdout]   # reports/<name>.md from the JSON alone
 ./cupella xref.py <name> <Class.method|FUN_...|Class::method> [--depth N]
 ./cupella callgraph-check.py <name> [scope ...]   # after changing units.py or dex.py: "lost" and functions without a dex method must be 0
 ./cupella behavior-map.py <name> <Class.method|util/Foo.java:120> [--up N] [--down N]   # Mermaid map for a finding
@@ -178,6 +189,9 @@ entry and 8 GiB per APK (`APK_ENTRY_MAX`, `APK_TOTAL_MAX`), nesting of embedded 
 decrypted payloads three levels deep. `cache/` holds blutter builds that later analyses execute, so only the
 build container, which sees neither `data/` nor `work/`, writes it. Paths are relative to the repo root; absolute host paths do not
 exist inside the container. Output redirection (`> work/...`) happens on the host.
+
+No container writes `reports/`: the report skeleton is written to `work/` and copied
+on the host by the `./cupella` wrapper, never over an existing report.
 
 Mount exceptions: `cite-check.py` and `lead-eval.py` also see `reports/`, and
 `bench-*.py` see `bench/`, both read-only. `run-decryptor.sh` runs the decryptor with

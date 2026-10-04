@@ -144,6 +144,19 @@ From the agent benchmarks; each is small and testable on the same samples.
   [harnesses.md](harnesses.md) and have not run an analysis. Run one sample and one
   benchmark slice through each before claiming benchmark parity.
 
+- Rendered reports (pilot since 2026-10-04, [design-report.md](design-report.md) "Rendered
+  reports"): `facts.py`, `claims-check.py`, `report-build.py` (JSON), `report-render.py`
+  (markdown from the JSON); one malware report
+  (08ea5fb9...) rendered, two benign apps previewed with `--stdout` (F-Droid, maid). Open:
+  readers write draft claims (`prompts/read-area.md` still asks for a findings text file;
+  the `reader` role may write only `progress/`, so drafts would go to
+  `progress/<role>-claims.jsonl` for the main agent to move); the verifier writes a
+  `verdict` per claim (`prompts/verify-report.md`); the benchmark prompts; the skeleton
+  from `unpack.sh` replaced by a render; migrating the other reports in `reports/`;
+  `lead-eval.py` reading claims instead of parsing "## Findings"; `./cupella gate` and
+  `./cupella check` after the `scan.sh` change; an HTML renderer from the JSON (escape every
+  value, no links to indicators, a restrictive CSP).
+
 ## Anti-analysis
 
 - From the dropper analysis of 2026-10-03 (`1e5c2b9f...`): the triage's "declares:" lines

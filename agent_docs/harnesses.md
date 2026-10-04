@@ -101,3 +101,24 @@ agent needs; proposals go to the workspace's `proposals/`, inside the sandbox, a
   the reading was done and only the summary was lost. Readers now write each finding
   to `work/<name>/progress/<role>-findings.md` as they confirm it and end with a
   one-line message (`prompts/read-area.md`).
+- It has stopped the main agent writing a report in large pieces (table below).
+  Nothing from a stopped response is kept. The main agent now writes one section per
+  write and takes the Findings and Indicators of malware from a reader's findings file
+  ([workflow.md](workflow.md) "Checkpoints").
+- Stops so far, by model and stage (one or two events each, different samples: a hint,
+  not a measurement):
+
+  | Model | Stage | Outcome |
+  |-------|-------|---------|
+  | Claude Fable 5.1 (main agent) | report writing, two malware samples (a dropper, an SMS stealer; 2026-10-03/04) | finished, not stopped |
+  | `claude-opus-4-8` (reader subagents) | final summaries of an SMS stealer's areas (2026-10-04) | 2 of 4 stopped |
+  | Claude Opus 5.5 (main agent) | first write of the report on an NFC card-relay app (2026-10-04) | stopped; no file written |
+  | Claude Opus 5.5 (main agent) | same sample, second session: one Edit holding eight sections (2026-10-04) | stopped; skeleton kept, edit not applied |
+
+- When the report stage is stopped, never retry the stopped content in that session,
+  reworded or through a subagent. Write the stop into `progress/main.md` and tell the
+  user. The user can finish the analysis in a fresh session, with another model
+  selected if they choose (Claude Code: `/model`); that session resumes from
+  `progress/main.md` and the script output ([workflow.md](workflow.md) "Checkpoints")
+  and writes the report itself. A subagent cannot take over the report anyway: Claude
+  Code refuses a subagent's write to a file named like a report.

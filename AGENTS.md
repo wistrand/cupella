@@ -26,7 +26,8 @@ data/<name>.apk
 work/<name>/  triage.txt, manifest-summary.txt, native-summary.txt, apkid.txt,
               trackers.txt, flutter-summary.txt and dart/ (Flutter), hermes/ (React
               Native), raw/, apktool/, jadx/, dex/, sig/, embedded.txt, unlocked.txt,
-              encrypted-left.txt, zip-anomalies.txt (malformed ZIP only)
+              encrypted-left.txt, zip-anomalies.txt (malformed ZIP only),
+              report-skeleton.md (copied to reports/<name>.md when no report exists)
 work/<name>.emb<k>/  each payload found inside the APK or decrypted by script, unpacked
               as a sample
               (work/_reference/ caches downloads of reference-check.py)
@@ -35,11 +36,16 @@ work/<name>.emb<k>/  each payload found inside the APK or decrypted by script, u
 work/<name>/scan.txt               leads (text patterns)
 work/<name>/structure-leads.txt    leads (call graph, control structure)
 work/<name>/flows.txt              leads (source-to-sink data flows)
+work/<name>/behavior-facts.txt     facts per entry point, gates, message keys (for Findings)
+work/<name>/facts.json             the script-owned data of a report (report-build.py)
 work/<name>/quark-leads.txt        leads (Quark-Engine rule matches by method)
 work/<name>/jadx-retry/            methods jadx failed on, in simple mode
    |  agent reads the code behind the leads
    v
-reports/<name>.md
+reports/<name>/claims.jsonl, notes.md   (pilot: agent sources)
+   |  ./cupella report-build.py
+   v
+reports/<name>.json                the report as data; reports/<name>.md rendered from it
 ```
 
 `<name>` is the APK filename without `.apk`. Payloads found inside an APK, or decrypted by
@@ -109,7 +115,7 @@ model are in [agent_docs/reference.md](agent_docs/reference.md).
 - `work/` is disposable. Everything in it must be regenerable from `data/` by the scripts, except agent outputs: `work/<name>/decrypt/`, `work/<name>/proposals/`, and `work/<name>/progress/` (kept by `unpack.sh -f`) and the benchmark runs under `work/_*/`.
 - Never let an archive entry, a symlink, or a decompression bomb from an APK reach outside the sample's directory or fill the disk: extract only through `unpack.sh` (`apkunzip.py`, size limits, symlinks removed), and keep `cache/` read-only to containers that see APK data.
 - Never run benchmark analysis agents as forks or with access to answer keys (`work/_ghera-blind*/key.json`, `bench/`, `bench-sources/`); use fresh agents with the `reader` role and the prompts in `prompts/bench/`.
-- Never read an earlier report or another analysis's `work/` for the sample under analysis, including the checkout's `reports/` and `work/` when working in a workspace, and the example reports in `docs/examples/`: judge from this run's script output and code. An earlier conclusion read first anchors the new one. Updating a report on a rerun means doing the analysis fresh, then editing that workspace's own `reports/<name>.md`. A session resuming an unfinished analysis may read that analysis's own partial report and `progress/main.md` ([agent_docs/workflow.md](agent_docs/workflow.md) "Checkpoints").
+- Never read an earlier report or another analysis's `work/` for the sample under analysis, including the checkout's `reports/` and `work/` when working in a workspace, and the example reports in `docs/examples/`: judge from this run's script output and code. An earlier conclusion read first anchors the new one. Updating a report on a rerun means doing the analysis fresh, then editing that workspace's own `reports/<name>.md`. A session resuming an unfinished analysis may read that analysis's own partial report, `progress/main.md`, and `progress/*-findings.md` ([agent_docs/workflow.md](agent_docs/workflow.md) "Checkpoints").
 - Scripts stay APK-independent. Never hardcode a package name, path, or expectation from one sample into `scripts/`.
 
 ## Conventions
