@@ -222,7 +222,7 @@ if [ "$cmd" = "setup" ]; then
   "$docker" info > /dev/null 2>&1 || { echo "Docker is not usable by this user ($docker info failed)" >&2; exit 1; }
   free=$(df -Pk "$root" | awk 'NR==2 {print int($4 / 1048576)}')
   [ "$free" -ge 20 ] || echo "warning: ${free} GB free under $root; the image needs about 6 GB, each large APK several GB in work/"
-  if ! "$docker" image inspect "$image" > /dev/null 2>&1; then
+  if ! "$docker" image inspect "$image" > /dev/null; then
     echo "== building the image (downloads pinned tools; takes a while, once)"
     "$0" build || exit 1
   fi
@@ -323,7 +323,7 @@ if [ "$cmd" = proposals ] || [ "$cmd" = workspaces ]; then
   exec env CUPELLA_WS="$ws" CUPELLA_ROOT="$root" "$root/host/$cmd.sh" "$@"
 fi
 
-"$docker" image inspect "$image" > /dev/null 2>&1 \
+"$docker" image inspect "$image" > /dev/null \
   || { echo "image $image not found: ask the user to run ./cupella setup (or ./cupella build)" >&2; exit 1; }
 # Claude Code agent types are generated from roles/: say when they are older than a role
 if [ -d "$ws/.claude/agents" ] && { [ ! -f "$ws/.claude/agents/.generated" ] \
@@ -461,7 +461,7 @@ case "$cmd" in
     # (v4.5.3), offline and with the same limits as the analysis image. The user pulls
     # it once; this script never downloads it.
     mobsf_image=${MOBSF_IMAGE:-opensecurity/mobile-security-framework-mobsf@sha256:5113fbad0727445dda01afdccafea5e107bfa8632ead8a169492f5caa8aa1b7c}
-    "$docker" image inspect "$mobsf_image" > /dev/null 2>&1 \
+    "$docker" image inspect "$mobsf_image" > /dev/null \
       || { echo "MobSF image not present: ask the user to run: docker pull $mobsf_image" >&2; exit 1; }
     # MobSF downloads jadx on first use; offline it gets ours (pinned in the image), copied
     # once into cache/ by a container that has neither network nor APK data
