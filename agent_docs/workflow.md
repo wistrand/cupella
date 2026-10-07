@@ -43,7 +43,9 @@ analysis, or when the answer needs more than a few cited lines.
 - A sample that came as a password-protected archive (`data/<sha256>.zip` from a malware
   repository) is taken out with `./cupella sample-archive.py data/<file>.zip`; the APK
   lands in `work/_samples/<name>.apk`, and `unpack.sh` takes that path. Never extract it
-  with host tools, and never write to `data/`.
+  with host tools, and never write to `data/`. APKs stored in a Parquet file (a sample
+  dataset) come out the same way with `./cupella parquet-samples.py data/<file>.parquet`
+  ([runbook-analysis.md](runbook-analysis.md)).
 - `<name>` is the APK filename without `.apk`. Every stage keys on it: `work/<name>/`,
   `reports/<name>.md`. `./cupella run-decryptor.sh` accepts only names made of letters,
   digits, `.`, `_`, and `-`; ask the user to rename a file before staging it if needed.
@@ -225,7 +227,9 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
   the agent's final message when it cannot write. For a rendered report also
   `work/<name>/progress/verify-verdicts/<id>.json`, one verdict file per claim, which
   `./cupella claims-merge.py <name>` merges into `reports/<name>/claims.jsonl`. Fix every "wrong" and "overstated" item after
-  checking it against the code yourself; the verifier can be wrong too. One data point
+  checking it against the code yourself; the verifier can be wrong too. Then set that
+  verdict's `resolution` (what changed, or why the claim stands): `claims-check.py` fails
+  while one is missing. One data point
   for cost: verifying the Octo report took about 150k tokens and 3 minutes and found 3
   wrong and 4 overstated claims out of 25.
 - The main agent writes `work/<name>/progress/main.md` as it works (see
@@ -256,7 +260,8 @@ Before telling the user a report is done:
 - Every finding that rests on a call chain across several functions has a behavior map
   (`./cupella behavior-map.py`, [design-report.md](design-report.md) "Behavior maps"), with
   each edge checked in the code: false edges removed, edges the graph cannot follow
-  (Handler posts, threads, function pointers) added and marked as read.
+  (Handler posts, threads, function pointers) added and marked as read. In a rendered
+  report the map is the claim's `map` field, a file in `reports/<name>/maps/`.
 - Inferred claims are marked as inferred; open questions are listed.
 - No section still reads "not reached", unless the run was stopped short or was a
   budget run and the Summary says so.

@@ -1,10 +1,15 @@
 # Harnesses
 
-Cupella is a set of scripts, a container, docs, and prompts; the coding agent that
-reads the docs and runs `./cupella` is interchangeable. This file says what a harness has
-to provide and how each known one provides it. Claude Code ran all benchmarks and the
-subagent stages. Codex and Antigravity have run analyses successfully. The notes for
-the other harnesses are untested.
+Cupella is a set of scripts, a container, docs, and prompts; the agent that reads the
+docs and runs `./cupella` is interchangeable. The default is Cupella's own harness,
+`./cupella agent` ([harness-api.md](harness-api.md)), in a workspace whose `data/` and
+`work/` are Docker volumes ([store-volumes.md](store-volumes.md)): it enforces the role
+limits below in code and keeps sample files off the host. This file says what a harness
+has to provide and how each coding-agent harness provides it, for running the analysis
+with one of those instead (`./cupella workspaces new DIR --harness claude|other`,
+host directories). Claude Code ran all benchmarks and the subagent stages. Codex and
+Antigravity have run analyses successfully. The notes for the other harnesses are
+untested.
 
 ## Contents
 
@@ -34,8 +39,8 @@ rule text followed by the stage prompt, and enforcing the role's header where it
   imports its copy of `AGENTS.md` and `WORKSPACE.md`. The workspace's
   `.claude/settings.json` and agent types are generated too and refreshed with the docs;
   user permission rules go in `.claude/settings.local.json`.
-- `./cupella setup` (with `--harness claude`, the default when `claude` is installed)
-  generates the agent types `apk-reader` and `apk-decryptor` in `.claude/agents/` from
+- `./cupella setup --harness claude` (and plain `./cupella setup` in a checkout that
+  has them already) generates the agent types `apk-reader` and `apk-decryptor` in `.claude/agents/` from
   `roles/`, with the tool lists the role headers allow (reader: Read, Grep, Glob, Write;
   decryptor: the same plus Bash). They load when a session starts; a session started
   before they existed uses a general-purpose agent with the role text in its prompt.
@@ -67,8 +72,13 @@ conventions as of 2026-10; check them against its current docs.
   stage prompt.
 - **Harnesses without instruction-file support**: start each session with "Read
   AGENTS.md and follow it".
+- **Our own harness** (`./cupella agent`, built 2026-10-05, smoke-tested only): a loop
+  that calls models through an OpenAI-style chat API (OpenRouter, a local server) or
+  Anthropic's Messages API, enforces each role's paths and commands in code, and saves
+  every refused response with its request to `work/_stops/`:
+  [harness-api.md](harness-api.md).
 
-`./cupella setup --harness other` (the default when `claude` is not installed) makes the
+`./cupella workspaces new DIR --harness other` makes the
 workspace files every harness needs (the doc copies, `WORKSPACE.md`, the `cupella` wrapper, the
 marker) and none of the Claude files. Because the workspace holds copies, not a link, a
 harness sandbox limited to the workspace (Codex `workspace-write`) can read every doc the
@@ -110,7 +120,9 @@ agent needs; proposals go to the workspace's `proposals/`, inside the sandbox, a
   verdicts are one file per record since then. Whether the model's additional safety
   measures or the resent content caused the stops is not known.
 - It has stopped the main agent writing a report in large pieces (table below).
-  Nothing from a stopped response is kept. The main agent now writes one section per
+  Nothing from a stopped response is kept: Claude Code's transcript records the stop
+  (model, request id, category such as `cyber`) with empty content, and deletes
+  transcripts after 30 days. The main agent now writes one section per
   write and takes the Findings and Indicators of malware from a reader's findings file
   ([workflow.md](workflow.md) "Checkpoints").
 - Stops so far, by model and stage (one or two events each, different samples: a hint,

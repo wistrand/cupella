@@ -12,6 +12,7 @@ at the right code); agent benchmarks measure what an agent reports after reading
 - Current numbers
 - Tool comparison
 - Quark leads as a lead source
+- Models through the API harness (2026-10-06)
 - What the numbers do not say
 
 ## Datasets
@@ -294,6 +295,29 @@ lead files name 38 (63%), Quark leads 23 (38%), only Quark 5, only the existing 
 - In the pipeline since 2026-10-03 (`scan.sh`). On the 9 analyzed apps' reports
   (`lead-eval.py`), `quark-leads.txt` covers 0 to 8 findings per app; launcher B's
   "any source" coverage rose from 8 to 10 of 12 findings, the other apps' did not change.
+
+## Models through the API harness (2026-10-06)
+
+One malware sample with a native payload, analyzed by `./cupella model-compare` (the
+API harness, `agent_docs/harness-api.md`) with each model as main agent, readers,
+decryptor, and verifier, and compared by hand with the Claude Code analysis of the same
+sample (`claude-opus-5-5`, 8 findings). One run per model: a hint, not a measurement.
+Results and the per-finding table: `work/_bench-models/20261006T085416-*/comparison.md`
+(not readable by agents).
+
+| Main and subagent model | Reference findings covered | Errors that matter | Cost |
+|-------------------------|----------------------------|--------------------|------|
+| `openai/gpt-5.6-luna` (main), Sonnet readers (2026-10-05/06) | 2 of 8 | skipped the native stage until the workflow was in its prompt | $0.46 |
+| `openai/gpt-5.6-sol` | 6 of 8, and read further than the reference in one area | 6 overstated verdicts left unfixed | $4.39 |
+| `deepseek/deepseek-v4-pro-0813` | 5 of 8 | two misspelled C2 indicators; one mechanism misread; main stopped at its $3 cap | $6.61 |
+| `google/gemini-3.8-flash` | 3 of 8 | decryptors lost to a harness bug (fixed); claimed behavior it did not read | $4.18 |
+| `meta-models/Muse-Glimmer-30B` (HF endpoint, vLLM) | 2 of 8 | no subagents, no native stage | endpoint time, 5 min |
+| `gpt-5.6-sol` main, Muse readers, decryptor, verifier | stopped at 15 min | one reader wrote to the wrong folder; decryptor looped on one `grep` | $0.31 plus endpoint time |
+
+- No model fixed the verdicts marked overstated or wrong; `claims-check.py` now requires a
+  `resolution` on each.
+- Rerun Gemini with the fix before ranking it.
+- Muse-Glimmer details: `work/_bench-models/20261006T103749-*/findings.md`.
 
 ## What the numbers do not say
 

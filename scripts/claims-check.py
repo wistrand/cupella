@@ -25,7 +25,16 @@ Findings. A record:
   author      "main" or the reader role that wrote it ("reader-c2")
   verdict     optional, from verification (claims-merge.py writes it):
               {"result": "holds"|"overstated"|"wrong", "note": "...", "by": "verify",
-               "refs": ["<path>:<line>", ...]}
+               "refs": ["<path>:<line>", ...], "resolution": "..."}
+              resolution: added by the main agent to an overstated or wrong verdict after
+              checking the code: what it changed in the claim, or why the claim stands
+              (at most 500 characters). Such a verdict without one is a problem, unless the
+              claim is rejected.
+  map         optional: "maps/<file>.md", a behavior map in reports/<name>/maps/ (the
+              behavior-map.py output, edges checked and relabeled by the agent); the file
+              must hold exactly one ```mermaid block
+  map_note    optional, with map: what was removed, added, or relabeled after checking
+              the edges in the code (at most 500 characters)
 
 reports/<name>/indicators.jsonl (optional) holds indicators the agent adds to the ones
 report-build.py takes from facts.json (decoded hosts, keys, names), one per line:
@@ -48,7 +57,7 @@ STATUS = {"draft", "confirmed", "rejected"}
 CONFIDENCE = {"confirmed", "likely", "lead", "inert"}
 VERDICT = {"holds", "overstated", "wrong"}
 FIELDS = {"id", "status", "threat", "title", "claim", "evidence", "gate", "confidence", "class",
-          "attack", "inferred", "author", "verdict"}
+          "attack", "inferred", "author", "verdict", "map", "map_note"}
 REQUIRED = ("id", "status", "title", "claim", "evidence", "gate", "confidence")
 REF = re.compile(r"^([\w./$+-]+):(\d+)(?:-(\d+))?$")
 ATTACK = re.compile(r"^T\d{4}(?:\.\d{3})?$")
@@ -114,6 +123,12 @@ def load(path):
         for r in v.get("refs") or []:
           if not REF.match(str(r)):
             problems.append("%s: verdict ref %r is not <path>:<line>[-<line>]" % (where, r))
+        res = v.get("resolution")
+        if res is not None and (not isinstance(res, str) or not res.strip() or len(res) > 500):
+          problems.append("%s: verdict.resolution must be a non-empty string of at most 500 characters" % where)
+        elif v["result"] in ("overstated", "wrong") and res is None and c.get("status") != "rejected":
+          problems.append("%s: verdict %s not resolved: check the code, fix the claim (or reject it), then set "
+                          "verdict.resolution to what changed or why the claim stands" % (where, v["result"]))
       claims.append(c)
   return claims, problems
 
@@ -165,6 +180,36 @@ def resolve(name, path):
     if os.path.isfile(c) and real.startswith(os.path.realpath(os.path.join(ROOT, "work")) + os.sep):
       return c
   return None
+
+
+MAP = re.compile(r"^maps/[\w.$+-]+\.md$")
+MERMAID = re.compile(r"```mermaid\n.*?\n```", re.S)
+
+
+def check_maps(name, claims):
+  """each claim's map names a file in reports/<name>/maps/ holding one mermaid block"""
+  problems = []
+  for c in claims:
+    m, note = c.get("map"), c.get("map_note")
+    if note is not None and (not isinstance(note, str) or not note.strip() or len(note) > 500):
+      problems.append("%s: map_note must be a non-empty string of at most 500 characters" % c.get("id"))
+    if note is not None and m is None:
+      problems.append("%s: map_note without map" % c.get("id"))
+    if m is None:
+      continue
+    if not isinstance(m, str) or not MAP.match(m):
+      problems.append("%s: map %r is not maps/<file>.md" % (c.get("id"), m))
+      continue
+    p = os.path.join(ROOT, "reports", name, m)
+    if not os.path.isfile(p) or os.path.islink(p):
+      problems.append("%s: map reports/%s/%s: no such file (copy work/%s/maps/<function>.md there)" % (
+        c.get("id"), name, m, name))
+      continue
+    with open(p, errors="replace") as f:
+      n = len(MERMAID.findall(f.read()))
+    if n != 1:
+      problems.append("%s: map reports/%s/%s holds %d mermaid blocks, not 1" % (c.get("id"), name, m, n))
+  return problems
 
 
 def norm(s):
@@ -234,6 +279,7 @@ def main():
     with open(fp) as f:
       facts = json.load(f)
   problems += check_evidence(name, claims, facts)
+  problems += check_maps(name, claims)
   n = {s: sum(1 for c in claims if c.get("status") == s) for s in sorted(STATUS)}
   print("# Claims check: reports/%s/claims.jsonl" % name)
   print("%d claims (%s); %d added indicators; %d problems" % (

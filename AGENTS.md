@@ -64,8 +64,9 @@ verification, and writes `reports/` (and docs, in the checkout).
 ## Core commands
 
 ```bash
-./cupella setup [--workspace DIR]               # the user runs this once: image, directories, self-test
+./cupella workspaces new DIR                    # the user runs this: image (once), a workspace (data/ and work/ in volumes), self-test
 ./cupella sample-archive.py data/<file>.zip     # only for a sample in a password-protected archive: APK to work/_samples/
+./cupella parquet-samples.py data/<file>.parquet --list   # APKs stored in a Parquet dataset: list, then extract rows to work/_samples/
 ./cupella unpack.sh data/<path>/<name>.apk      # always first
 ./cupella scan.sh <name>                        # always second
 ./cupella cite-check.py <name>                  # before finishing any report
@@ -73,6 +74,7 @@ verification, and writes `reports/` (and docs, in the checkout).
 ./cupella try-proposal <slug> <name>            # run a proposed tool (proposals/<slug>/tool.py) on a sample
 ./cupella proposals [--all]                     # in the checkout: proposals of every workspace and their state
 ./cupella workspaces                            # in the checkout: workspaces made from it
+./cupella agent "<request>"                     # the user runs the API harness (agent_docs/harness-api.md)
 ./cupella gate baseline; ./cupella gate         # after changing scan, scope, or lead scripts
 ./cupella check [--no-gate]                     # after any script change: fixtures, citations, gate
 ./cupella sync                                  # in a workspace: refresh the doc copies now
@@ -80,7 +82,7 @@ verification, and writes `reports/` (and docs, in the checkout).
 ./bench-setup                                   # the user fetches the benchmark data (optional)
 ```
 
-The session may run in the checkout or in a workspace made by `./cupella setup --workspace`.
+The session may run in the checkout or in a workspace made by `./cupella workspaces new`.
 A workspace has its own `data/`, `work/`, `reports/`, and `proposals/`; read-only copies of
 this file, `agent_docs/`, `prompts/`, and `roles/` (every path in them works there as
 written); a `./cupella` wrapper that runs the checkout; and `WORKSPACE.md`. In a workspace,
@@ -116,7 +118,7 @@ model are in [agent_docs/reference.md](agent_docs/reference.md).
 - Network access during an analysis is limited to `./cupella reference-check.py`, which contacts a fixed allow-list of public registries and sends only public identifiers (an engine commit, a package name and version), and the automatic blutter build, which fetches Dart runtime sources from GitHub in a container without access to the APK. Never add a host taken from an APK to either. A third, opt-in case: when the user sets `LLAV_URL` for a remote model server, `./cupella --llav` and `model-leads.py` run with network access and send the selected functions' text to that server; never set it yourself.
 - Every claim in a report cites evidence: a path under `work/<name>/` (plus class or line where it helps) or the command that produced it. Never finish a report while `./cupella cite-check.py <name>` lists problems.
 - A script hit is a lead, never a finding. Nothing goes in a report's Findings until the agent has read the code or config behind it. Model scores (`model-leads.txt`) are the weakest leads: never cite a score as evidence, and never treat a function's absence from that list as meaning anything.
-- `work/` is disposable. Everything in it must be regenerable from `data/` by the scripts, except agent outputs: `work/<name>/decrypt/`, `work/<name>/proposals/`, and `work/<name>/progress/` (kept by `unpack.sh -f`) and the benchmark runs under `work/_*/`.
+- `work/` is disposable. Everything in it must be regenerable from `data/` by the scripts, except agent outputs: `work/<name>/decrypt/`, `work/<name>/proposals/`, and `work/<name>/progress/` (kept by `unpack.sh -f`), the benchmark runs under `work/_*/`, and the API harness's sessions and refusal records (`work/_harness/`, `work/_stops/`).
 - Never let an archive entry, a symlink, or a decompression bomb from an APK reach outside the sample's directory or fill the disk: extract only through `unpack.sh` (`apkunzip.py`, size limits, symlinks removed), and keep `cache/` read-only to containers that see APK data.
 - Never run benchmark analysis agents as forks or with access to answer keys (`work/_ghera-blind*/key.json`, `bench/`, `bench-sources/`); use fresh agents with the `reader` role and the prompts in `prompts/bench/`.
 - Never read an earlier report or another analysis's `work/` for the sample under analysis, including the checkout's `reports/` and `work/` when working in a workspace, and the example reports in `docs/examples/`: judge from this run's script output and code. An earlier conclusion read first anchors the new one. Updating a report on a rerun means doing the analysis fresh, then editing that workspace's own `reports/<name>.md`. A session resuming an unfinished analysis may read that analysis's own partial report, `progress/main.md`, and `progress/*-findings.md` ([agent_docs/workflow.md](agent_docs/workflow.md) "Checkpoints").

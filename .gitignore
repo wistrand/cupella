@@ -2,6 +2,7 @@
 /cache/
 /bench/
 /data/
+/exports/
 /reports/
 __pycache__/
 /.claude/*.log
@@ -12,3 +13,7 @@ __pycache__/
 # workspaces made from this checkout and decisions on their proposals (./cupella proposals)
 /.cupella-workspaces
 /.cupella-decisions.tsv
+# the API harness configuration (harness/models.example.json)
+/harness/models.json
+/harness.json
+/local

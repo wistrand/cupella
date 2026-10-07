@@ -1,8 +1,28 @@
 #!/usr/bin/env bash
 # Run a Cupella analysis script inside its container.
 #
-#   ./cupella setup [--workspace DIR] [--harness claude|other]
-#                                        first use: checks, image, directories, self-test
+#   ./cupella workspaces new DIR             first use: image, a workspace for cases (data/ and
+#                                        work/ in Docker volumes), self-test
+#   ./cupella import <file> [subdir]         copy a sample into data/
+#   ./cupella agent "<request>" | --resume <name> | --check
+#                                        the analysis agent on any model API, with role limits
+#                                        in code (harness/, agent_docs/harness-api.md); in
+#                                        volume mode its file access goes through
+#                                        ./cupella store-serve (started by the harness)
+#   ./cupella md-view.py reports/<name>.md   read a report (or a .md under work/) on the terminal
+#   ./cupella export <name> <path>...        copy text files of a sample's work/ to exports/<name>/
+#                                        on the host (for you; agents never run it)
+#   ./cupella store [ls [--all] | rm [all|work]]
+#                                        where data/ and work/ are and their size; delete
+#                                        a volume workspace's volumes (asks first)
+#   ./cupella setup [--workspace DIR] [--harness api|claude|other] [--store volume|host]
+#                                        setup --workspace: a new workspace (as workspaces
+#                                        new), or repair and refresh an existing one;
+#                                        the default harness is api (./cupella agent); a new
+#                                        workspace gets --store volume unless --harness
+#                                        claude|other (a coding agent, which reads work/ on
+#                                        the host) or --store host; plain setup prepares the
+#                                        checkout (host directories: benchmarks, gate)
 #   ./cupella build                          build the image (downloads the pinned tools)
 #   ./cupella unpack.sh data/<name>.apk      any script in scripts/, with its arguments
 #   ./cupella scan.sh <name> [scope ...]
@@ -19,6 +39,12 @@
 #                                        (host/proposals.sh; set only in the checkout)
 #   ./cupella workspaces [--find DIR ...]    workspaces made from this checkout: samples,
 #                                        reports, open proposals (host/workspaces.sh)
+#   ./cupella workspaces new DIR [--harness ...] [--store ...]
+#                                        a new workspace (setup --workspace for an existing one)
+#   ./cupella workspaces rm DIR | --prune    delete a workspace (volumes, directory, list
+#                                        entry; asks first), or drop entries that are gone
+#   ./cupella model-compare <name> <spec>...  the same analysis once per model through the
+#                                        harness, tabulated (host/model-compare.py)
 #   ./cupella gate [baseline]                benchmark gate for rule changes (host/gate.sh;
 #                                        always on the checkout's benchmark data)
 #   ./cupella check [--no-gate]              regression run after script changes: fixtures,
@@ -63,17 +89,122 @@ else ws=$root; fi
 docker=${CUPELLA_DOCKER:-docker}
 image=${CUPELLA_IMAGE:-cupella:latest}
 
+# Storage of sample files (agent_docs/store-volumes.md): "host" keeps data/ and work/ as
+# directories of the workspace; "volume" (a workspace made with setup --store volume)
+# keeps them in two Docker volumes, so nothing from a sample is on the host file system.
+# Every mount of data/ or work/ and every test of a path in them goes through the store_*
+# functions below; reports/ is a host directory in both modes.
+store=host
+[ -f "$ws/.cupella-workspace" ] && store=$(sed -n 's/^store=//p' "$ws/.cupella-workspace")
+store=${store:-host}
+ws_id=$(printf '%s' "$ws" | sha256sum | cut -c1-12)
+vol_data="cupella-$ws_id-data" vol_work="cupella-$ws_id-work"
+# Podman names the subpath option differently from Docker
+case "$(basename "$docker")" in podman*) subpath_opt=subpath ;; *) subpath_opt=volume-subpath ;; esac
+
+store_mount() { # <data|work> <subpath or ""> <container path> [ro]: mount arguments, one per line
+  local area=$1 sub=$2 dst=$3 ro=${4:-} vol
+  if [ "$store" = volume ]; then
+    [ "$area" = data ] && vol=$vol_data || vol=$vol_work
+    printf '%s\n' --mount "type=volume,src=$vol,dst=$dst${sub:+,$subpath_opt=$sub}${ro:+,readonly}"
+  else
+    printf '%s\n' -v "$ws/$area${sub:+/$sub}:$dst${ro:+:ro}"
+  fi
+}
+store_add() { # <array name> <store_mount args...>: append the mount to the array
+  local -n _arr=$1
+  shift
+  mapfile -t -O "${#_arr[@]}" _arr < <(store_mount "$@")
+}
+store_stat() { # <data|work> <path>...: one line per path: d (directory), f (file), l (link), - (none)
+  local area=$1
+  shift
+  if [ "$store" = volume ]; then
+    local vol
+    [ "$area" = data ] && vol=$vol_data || vol=$vol_work
+    "$docker" run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL --read-only \
+      --mount "type=volume,src=$vol,dst=/s,readonly" --entrypoint sh "$image" -c \
+      'cd /s && for p in "$@"; do if [ -L "$p" ]; then echo l; elif [ -d "$p" ]; then echo d; elif [ -f "$p" ]; then echo f; else echo -; fi; done' \
+      sh "$@"
+  else
+    local p
+    for p in "$@"; do
+      p="$ws/$area/$p"
+      if [ -L "$p" ]; then echo l; elif [ -d "$p" ]; then echo d; elif [ -f "$p" ]; then echo f; else echo -; fi
+    done
+  fi
+}
+store_is() { # <d|f> <data|work> <path>: true when the path is that kind and not a link
+  [ "$(store_stat "$2" "$3")" = "$1" ]
+}
+store_children() { # <name>: the sample's child directories in work/ (<name>.emb<k>, <name>.dec<k>, nested)
+  local n=$1 d
+  if [ "$store" = volume ]; then
+    "$docker" run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL --read-only \
+      --mount "type=volume,src=$vol_work,dst=/s,readonly" --entrypoint sh "$image" -c \
+      'cd /s && for d in "$1".emb[0-9]* "$1".dec[0-9]*; do [ -d "$d" ] && [ ! -L "$d" ] && echo "$d"; done; true' sh "$n" \
+      | while IFS= read -r d; do [[ "${d#"$n"}" =~ ^(\.(emb|dec)[0-9]+)+$ ]] && echo "$d"; done
+  else
+    for d in "$ws/work/$n".emb[0-9]* "$ws/work/$n".dec[0-9]*; do
+      [ -d "$d" ] && [ ! -L "$d" ] && [[ "${d#"$ws/work/$n"}" =~ ^(\.(emb|dec)[0-9]+)+$ ]] && basename "$d"
+    done
+  fi
+}
+store_mkdir() { # <work path>: create it (and parents) in work/
+  if [ "$store" = volume ]; then
+    "$docker" run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL --read-only \
+      --mount "type=volume,src=$vol_work,dst=/s" --entrypoint mkdir "$image" -p "/s/$1"
+  else
+    mkdir -p "$ws/work/$1"
+  fi
+}
+store_children_all() { # the sample directories in work/ (not _-prefixed)
+  if [ "$store" = volume ]; then
+    "$docker" run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL --read-only \
+      --mount "type=volume,src=$vol_work,dst=/s,readonly" --entrypoint sh "$image" -c \
+      'cd /s && for d in *; do [ -d "$d" ] && [ ! -L "$d" ] && case $d in _*) ;; *) echo "$d" ;; esac; done; true'
+  else
+    local d
+    for d in "$ws/work"/*; do [ -d "$d" ] && [ ! -L "$d" ] && case ${d##*/} in _*) ;; *) echo "${d##*/}" ;; esac; done; true
+  fi
+}
+store_ready() { # volume mode: both volumes exist
+  [ "$store" = volume ] || return 0
+  "$docker" volume inspect "$vol_data" "$vol_work" > /dev/null 2>&1 \
+    || { echo "the volumes of this workspace ($vol_data, $vol_work) are missing: run ./cupella setup --workspace $ws --store volume" >&2; return 1; }
+}
+
 # help: the command block of this header, then the runnable scripts (each script's own
 # usage is in its header comment)
 cupella_help() {
   echo "Cupella: static analysis of Android APKs, where scripts unpack and scan each sample in an"
-  echo "offline container and a coding agent reads the code behind the leads and writes a cited report."
+  echo "offline container and an agent (./cupella agent, or a coding agent) reads the code behind the"
+  echo "leads and writes a cited report."
+  cat <<'TYPICAL'
+
+Typical setup (README.md "Quick start"):
+
+  export OPENROUTER_API_KEY=...                  # the key your backend names in harness/models.json
+  ./cupella workspaces new ~/cases/first         # image once, a workspace (data/ and work/ in
+                                                 # Docker volumes), harness/models.json if missing
+  cd ~/cases/first
+  ./cupella import ~/Downloads/some.apk          # copied in; the download is left as it is
+  ./cupella agent "analyze some"                 # --chat to ask follow-ups afterwards
+  ./cupella md-view.py reports/some.md           # read the report
+
+With Claude Code or another coding agent instead (host directories):
+
+  ./cupella workspaces new ~/cases/acme --harness claude
+  cp ~/Downloads/some.apk ~/cases/acme/data/ && cd ~/cases/acme && claude
+
+Commands:
+TYPICAL
   sed -n '3,/^#$/p' "$root/cupella" | sed '$d; s/^# \{0,1\}//'
   echo
   echo "Scripts (./cupella <script> [args]; usage in each script's header):"
-  (cd "$root/scripts" && ls -1 -- *.sh *.py 2> /dev/null | grep -v -E '^(units|dex|elf|android_perms|llav_client)\.py$' \
+  (cd "$root/scripts" && ls -1 -- *.sh *.py 2> /dev/null | grep -v -E '^(units|dex|elf|android_perms|llav_client|export-files)\.py$' \
     | column -c "${COLUMNS:-100}" 2> /dev/null || ls -1 -- *.sh *.py)
-  echo "  fixtures/zipslip-test.sh  fixtures/injection-test.sh  fixtures/manifest-tricks-test.sh  fixtures/elf-headers-test.sh"
+  echo "  fixtures/zipslip-test.sh  fixtures/injection-test.sh  fixtures/manifest-tricks-test.sh  fixtures/elf-headers-test.sh  fixtures/md-view-test.sh  fixtures/parquet-samples-test.sh"
   echo
   echo "Workflow and the full command list: AGENTS.md, agent_docs/reference.md"
 }
@@ -146,6 +277,8 @@ ws_sync() { # <workspace dir> [force]
   stamp=$(ws_stamp)
   [ "${2:-}" != force ] && [ "$(sed -n 's/^stamp=//p' "$w/.cupella-workspace")" = "$stamp" ] && return 0
   harness=$(sed -n 's/^harness=//p' "$w/.cupella-workspace")
+  local wstore
+  wstore=$(sed -n 's/^store=//p' "$w/.cupella-workspace")
   # workspaces made before the marker held anything: Claude Code if it has agent types
   [ -n "$harness" ] || { [ -d "$w/.claude/agents" ] && harness=claude || harness=other; }
   # one refresh at a time; a lock left by a killed run expires after 5 minutes
@@ -190,6 +323,17 @@ edits here are overwritten.
 - Claude Code: `.claude/settings.json`, `.claude/agents/`, and `CLAUDE.md` are generated
   too; put your own permission rules in `.claude/settings.local.json`.
 WSDOC
+    if [ "$wstore" = volume ]; then
+      cat >> "$w/WORKSPACE.md" <<'WSVOL' || exit 1
+- This workspace keeps `data/` and `work/` in Docker volumes, not in this directory
+  (agent_docs/store-volumes.md): nothing from a sample is on the host file system, and
+  only `reports/` is here. Run the analysis with `./cupella agent`; Claude Code and Codex
+  cannot read `work/` in this mode. Put a sample in with `./cupella import <file>`.
+  Read a report with `./cupella md-view.py reports/<name>.md`; copy files it cites to
+  `exports/<name>/` with `./cupella export <name> <path>...` (the user only, never an
+  agent); `./cupella store ls` shows the volumes, `./cupella store rm` deletes them.
+WSVOL
+    fi
     chmod -R a-w "${ws_copied[@]/#/$w/}" "$w/WORKSPACE.md" || exit 1
     if [ "$harness" = claude ]; then
       claude_agents "$w/.claude/agents" || exit 1
@@ -199,7 +343,8 @@ WSDOC
     # workspaces from before: the link to the whole checkout goes
     if [ -L "$w/tool" ]; then rm "$w/tool" || exit 1; fi
     mkdir -p "$w/proposals" || exit 1
-    printf 'checkout=%s\nharness=%s\nstamp=%s\n' "$root" "$harness" "$stamp" > "$w/.cupella-workspace"
+    printf 'checkout=%s\nharness=%s\nstamp=%s\n%s' "$root" "$harness" "$stamp" "${wstore:+store=$wstore
+}" > "$w/.cupella-workspace"
   ) || rc=$?
   if [ "$rc" = 0 ]; then echo "== workspace docs refreshed from $root" >&2
   else echo "== workspace refresh from $root failed (exit $rc); it is retried next time" >&2; fi
@@ -209,31 +354,104 @@ WSDOC
 
 # first use: check Docker and disk, build the image if missing, make the directories (or
 # a separate workspace), and prove the sandbox with the extraction and injection checks
+# `./cupella workspaces new DIR [--harness ...] [--store ...]`: a new workspace, made by the
+# setup code below; `./cupella setup --workspace DIR` stays the command that repairs and
+# refreshes an existing one (after the checkout moved, or for regenerated files)
+if [ "$cmd" = workspaces ] && [ "${1:-}" = new ]; then
+  nu="usage: ./cupella workspaces new DIR [--harness api|claude|other] [--store volume|host]"
+  shift
+  [ $# -gt 0 ] && [[ "$1" != -* ]] || { echo "$nu" >&2; exit 1; }
+  d=$1
+  shift
+  for a in "$@"; do [ "$a" != --workspace ] || { echo "$nu" >&2; exit 1; }; done
+  if [ -f "$d/.cupella-workspace" ]; then
+    echo "$d is a workspace already; to repair or refresh it: ./cupella setup --workspace $d" >&2; exit 1
+  fi
+  if [ -e "$d" ] && { [ ! -d "$d" ] || [ -n "$(ls -A "$d" 2> /dev/null)" ]; }; then
+    echo "$d exists and is not an empty directory: choose a new one" >&2; exit 1
+  fi
+  cmd=setup
+  set -- --workspace "$d" "$@"
+fi
 if [ "$cmd" = "setup" ]; then
-  target=""
-  harness=$(command -v claude > /dev/null 2>&1 && echo claude || echo other)
+  target="" newstore="" harness_given=""
+  harness=api
+  su="usage: ./cupella setup [--workspace DIR] [--harness claude|other|api] [--store host|volume]"
   while [ $# -gt 0 ]; do
     case $1 in
-      --workspace) target=${2:?usage: ./cupella setup [--workspace DIR] [--harness claude|other]}; shift 2 ;;
-      --harness) harness=${2:?usage: ./cupella setup [--workspace DIR] [--harness claude|other]}; shift 2 ;;
-      *) echo "usage: ./cupella setup [--workspace DIR] [--harness claude|other]" >&2; exit 1 ;;
+      --workspace) target=${2:?$su}; shift 2 ;;
+      --harness) harness=${2:?$su}; harness_given=1; shift 2 ;;
+      --store) newstore=${2:?$su}; shift 2 ;;
+      *) echo "$su" >&2; exit 1 ;;
     esac
   done
+  case $newstore in "" | host | volume) ;; *) echo "$su" >&2; exit 1 ;; esac
+  # an existing workspace keeps its store; switching is not supported
+  if [ -n "$target" ] && [ -f "$target/.cupella-workspace" ]; then
+    oldstore=$(sed -n 's/^store=//p' "$target/.cupella-workspace")
+    oldstore=${oldstore:-host}
+    [ -z "$newstore" ] || [ "$newstore" = "$oldstore" ] \
+      || { echo "this workspace uses store=$oldstore; switching is not supported (make a new workspace)" >&2; exit 1; }
+    newstore=$oldstore
+    # and its harness, unless another is asked for
+    if [ -z "$harness_given" ]; then
+      harness=$(sed -n 's/^harness=//p' "$target/.cupella-workspace")
+      [ -n "$harness" ] || { [ -d "$target/.claude/agents" ] && harness=claude || harness=other; }
+      [ "$oldstore" != volume ] || harness=api
+    fi
+  fi
+  # a new workspace: volume unless a harness that reads work/ on the host is asked for
+  if [ -z "$newstore" ]; then
+    if [ -n "$target" ] && { [ -z "$harness_given" ] || [ "$harness" = api ]; }; then newstore=volume; else newstore=host; fi
+  fi
+  if [ "$newstore" = volume ]; then
+    # volume mode is for the API harness only: other agents read work/ on the host
+    [ -n "$target" ] || { echo "--store volume is for a workspace: add --workspace DIR" >&2; exit 1; }
+    [ -z "$harness_given" ] || [ "$harness" = api ] \
+      || { echo "--store volume works with ./cupella agent only (--harness api), not $harness" >&2; exit 1; }
+    harness=api
+  fi
   "$docker" info > /dev/null 2>&1 || { echo "Docker is not usable by this user ($docker info failed)" >&2; exit 1; }
+  if [ "$newstore" = volume ]; then
+    # subpath mounts of volumes: Docker Engine 26+, Podman 5.4+
+    case "$(basename "$docker")" in
+      podman*) v=$("$docker" version --format '{{.Server.Version}}' 2>/dev/null || "$docker" --version | awk '{print $3}'); need=5.4 ;;
+      *) v=$("$docker" version --format '{{.Server.Version}}' 2>/dev/null); need=26.0 ;;
+    esac
+    [ "$(printf '%s\n%s\n' "$need" "${v:-0}" | sort -V | head -1)" = "$need" ] \
+      || { echo "--store volume needs $(basename "$docker") $need or later (found ${v:-unknown}) for volume subpath mounts; use --store host" >&2; exit 1; }
+  fi
   free=$(df -Pk "$root" | awk 'NR==2 {print int($4 / 1048576)}')
   [ "$free" -ge 20 ] || echo "warning: ${free} GB free under $root; the image needs about 6 GB, each large APK several GB in work/"
   if ! "$docker" image inspect "$image" > /dev/null; then
     echo "== building the image (downloads pinned tools; takes a while, once)"
     "$0" build || exit 1
   fi
-  [ "$harness" = claude ] && claude_agents "$root/.claude/agents"
+  # Claude Code agent types in the checkout: with --harness claude, and kept current
+  # where they were generated before
+  if [ "$harness" = claude ] || { [ -z "$target" ] && [ -f "$root/.claude/agents/.generated" ]; }; then
+    claude_agents "$root/.claude/agents"
+  fi
   if [ -n "$target" ]; then
     # a workspace: its own data/, work/, reports/, proposals/; read-only copies of the
     # agent-facing docs; a ./cupella wrapper that finds this checkout through the marker
-    mkdir -p "$target"/{data,work,reports,proposals}
+    mkdir -p "$target"/{reports,proposals}
+    [ "$newstore" = volume ] || mkdir -p "$target"/{data,work}
     target=$(cd "$target" && pwd)
     [ "$target" != "$root" ] || { echo "the workspace cannot be the checkout itself" >&2; exit 1; }
-    printf 'checkout=%s\nharness=%s\nstamp=\n' "$root" "$harness" > "$target/.cupella-workspace"
+    printf 'checkout=%s\nharness=%s\nstamp=\n%s' "$root" "$harness" "$([ "$newstore" = volume ] && echo store=volume)" > "$target/.cupella-workspace"
+    if [ "$newstore" = volume ]; then
+      rmdir "$target/data" "$target/work" 2> /dev/null || true
+      tid=$(printf '%s' "$target" | sha256sum | cut -c1-12)
+      for v in "cupella-$tid-data" "cupella-$tid-work"; do
+        "$docker" volume inspect "$v" > /dev/null 2>&1 \
+          || "$docker" volume create --label "cupella.workspace=$target" "$v" > /dev/null || exit 1
+        # owned by the calling user, so every later container runs as that user
+        "$docker" run --rm --network none --user 0 --mount "type=volume,src=$v,dst=/v" --entrypoint chown \
+          "$image" "$(id -u):$(id -g)" /v || exit 1
+      done
+      echo "== volumes cupella-$tid-data and cupella-$tid-work hold this workspace's data/ and work/"
+    fi
     cat > "$target/cupella" <<'WRAP'
 #!/bin/sh
 # generated by cupella setup: runs the Cupella checkout named in .cupella-workspace with
@@ -252,9 +470,10 @@ WRAP
     # script output, or what ./cupella generates. Written once; yours to edit.
     [ -e "$target/.gitignore" ] || cat > "$target/.gitignore" <<'GI'
 # written by cupella setup once; yours to edit (setup and sync never overwrite it)
-# samples (may be live malware) and script output (large, regenerable)
+# samples (may be live malware), script output (large, regenerable), copies out of work/
 /data/
 /work/
+/exports/
 # generated and refreshed from the checkout by ./cupella
 /AGENTS.md
 /WORKSPACE.md
@@ -273,10 +492,21 @@ WRAP
 GI
     ws_sync "$target"
     grep -qxF -- "$target" "$root/.cupella-workspaces" 2> /dev/null || echo "$target" >> "$root/.cupella-workspaces"
-    echo "== workspace $target (start your coding agent there; data/, work/, reports/ stay there)"
+    if [ "$newstore" = volume ]; then echo "== workspace $target (run ./cupella agent there; data/ and work/ are in its volumes, reports/ is there)"
+    elif [ "$harness" = api ]; then echo "== workspace $target (run ./cupella agent there; data/, work/, reports/ are directories there)"
+    else echo "== workspace $target (start your coding agent there; data/, work/, reports/ stay there)"; fi
     cd "$target"
   else
-    mkdir -p "$ws/data" "$ws/work" "$ws/reports"
+    # the checkout, or the workspace this is run in; a volume workspace keeps data/ and work/ in its volumes
+    mkdir -p "$ws/reports"
+    [ "$store" = volume ] || mkdir -p "$ws/data" "$ws/work"
+  fi
+  # the API harness's configuration: from the example when there is none (the checkout's,
+  # shared by its workspaces; a workspace's own harness.json wins). It names the key's
+  # environment variable, never the key.
+  if [ "$harness" = api ] && [ ! -e "$root/harness/models.json" ] && [ ! -e "${target:-$ws}/harness.json" ]; then
+    cp "$root/harness/models.example.json" "$root/harness/models.json" \
+      && echo "== wrote harness/models.json from the example: it uses OpenRouter (set OPENROUTER_API_KEY) and Claude models; edit it to choose others, then ./cupella agent --check"
   fi
   echo "== self-test: extraction stays inside the sample, decompression limits, injection scan"
   # the checkout's wrapper by absolute path: after the cd above a relative $0 may not resolve
@@ -287,7 +517,17 @@ GI
   grep -v '^  ' <<< "$out" | grep -v 'unzip is not used'
   [ "$passed" -gt 0 ] || bad=$((bad + 1))
   [ "$bad" = 0 ] || { echo "self-test: $bad failures; do not analyze samples until fixed" >&2; exit 1; }
-  echo "== ready. Put APKs in ${target:-$ws}/data/, start your coding agent in ${target:-$ws} (it reads AGENTS.md), and ask it to analyze one."
+  if [ "$newstore" = volume ] || [ "$store" = volume ]; then
+    echo "== ready. Copy APKs in with ./cupella import <file> (in ${target:-$ws}), then run ./cupella agent \"analyze <name>\" there."
+  elif [ -z "$target" ] && [ "$ws" = "$root" ]; then
+    echo "== ready: the checkout (host directories, for benchmarks and the gate). For cases, make a workspace:"
+    echo "   ./cupella workspaces new ~/cases/<case>, then ./cupella import <file> and ./cupella agent \"analyze <name>\" there."
+    echo "   With a coding agent instead: put APKs in data/ and start it here (it reads AGENTS.md)."
+  elif [ "$harness" = api ]; then
+    echo "== ready. Put APKs in ${target:-$ws}/data/ (or ./cupella import <file>), then run ./cupella agent \"analyze <name>\" there."
+  else
+    echo "== ready. Put APKs in ${target:-$ws}/data/, start your coding agent in ${target:-$ws} (it reads AGENTS.md), and ask it to analyze one."
+  fi
   echo "   Benchmarks (optional, in the checkout): ./bench-setup"
   exit 0
 fi
@@ -295,7 +535,7 @@ fi
 # `./cupella sync` in a workspace: refresh the copies now, even when the checkout is unchanged
 if [ "$cmd" = sync ]; then
   [ "$ws" != "$root" ] && [ -f "$ws/.cupella-workspace" ] \
-    || { echo "sync runs in a workspace (made by ./cupella setup --workspace DIR)" >&2; exit 1; }
+    || { echo "sync runs in a workspace (made by ./cupella workspaces new DIR)" >&2; exit 1; }
   ws_sync "$ws" force || { echo "sync failed (another refresh running? retry)" >&2; exit 1; }
   echo "== workspace $ws: docs, roles, and generated files refreshed from $root"
   exit 0
@@ -322,6 +562,13 @@ fi
 if [ "$cmd" = proposals ] || [ "$cmd" = workspaces ]; then
   exec env CUPELLA_WS="$ws" CUPELLA_ROOT="$root" "$root/host/$cmd.sh" "$@"
 fi
+# the API harness: runs on the host and calls ./cupella for every script
+if [ "$cmd" = agent ]; then
+  exec env CUPELLA_WS="$ws" CUPELLA_ROOT="$root" python3 "$root/harness/agent.py" "$@"
+fi
+if [ "$cmd" = model-compare ]; then
+  exec env CUPELLA_WS="$ws" CUPELLA_ROOT="$root" python3 "$root/host/model-compare.py" "$@"
+fi
 
 "$docker" image inspect "$image" > /dev/null \
   || { echo "image $image not found: ask the user to run ./cupella setup (or ./cupella build)" >&2; exit 1; }
@@ -331,7 +578,8 @@ if [ -d "$ws/.claude/agents" ] && { [ ! -f "$ws/.claude/agents/.generated" ] \
   echo "note: roles/ changed since the Claude agent types were generated; refresh with: ./cupella setup$([ "$ws" != "$root" ] && echo ' --workspace .')" >&2
 fi
 
-mkdir -p "$ws/work" "$ws/data" "$ws/reports" "$root/cache"
+mkdir -p "$ws/reports" "$root/cache"
+if [ "$store" = volume ]; then store_ready || exit 1; else mkdir -p "$ws/work" "$ws/data"; fi
 
 common=(--rm
   --user "$(id -u):$(id -g)"
@@ -350,7 +598,10 @@ common=(--rm
   -w /repo)
 # cache/ holds blutter builds that later analyses execute: read-only wherever APK data
 # is mounted, so no sample can plant code there; only builder() writes it
-analysis=(-v "$ws/data:/repo/data:ro" -v "$ws/work:/repo/work" -v "$root/cache:/cache:ro")
+analysis=()
+store_add analysis data "" /repo/data ro
+store_add analysis work "" /repo/work
+analysis+=(-v "$root/cache:/cache:ro")
 # SCAN_MAX (scan.sh hits per section) is the one setting passed through; a number only
 if [ -n "${SCAN_MAX:-}" ]; then
   [[ "$SCAN_MAX" =~ ^[0-9]+$ ]] || { echo "SCAN_MAX must be a number" >&2; exit 1; }
@@ -422,7 +673,118 @@ case "$cmd" in
     [ "$ws" = "$root" ] || echo "== check runs on the checkout ($root), not this workspace" >&2
     exec env -u CUPELLA_WORKSPACE "$root/host/check.sh" "$@" ;;
   versions) offline "$image" cat /opt/tools/VERSIONS; exit ;;
+  import)
+    # a sample into data/: copied, never moved; the host file is left for the user to
+    # delete. In volume mode the copy goes into the data volume through a container that
+    # sees only that file (read-only) and the volume.
+    src=${1:?usage: ./cupella import <file> [subdir]}
+    sub=${2:-}
+    [ -f "$src" ] && [ ! -L "$src" ] || { echo "not a regular file: $src" >&2; exit 1; }
+    base=$(basename "$src")
+    # no comma: a volume mount spec (--mount ...,volume-subpath=<name>) splits on it
+    [[ "$base" =~ ^[A-Za-z0-9][A-Za-z0-9._()+-]*$ ]] || { echo "rename the file first: only letters, digits, and ._()+- in a sample name" >&2; exit 1; }
+    [ -z "$sub" ] || [[ "$sub" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ && "/$sub/" != */../* && "/$sub/" != */./* ]] \
+      || { echo "bad subdirectory: $sub" >&2; exit 1; }
+    dst="${sub:+$sub/}$base"
+    [ "$(store_stat data "$dst")" = - ] || { echo "data/$dst exists; never replaced" >&2; exit 1; }
+    if [ "$store" = volume ]; then
+      abs=$(cd "$(dirname "$src")" && pwd)/$base
+      "$docker" run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL --read-only \
+        -v "$abs:/in/$base:ro" --mount "type=volume,src=$vol_data,dst=/d" --entrypoint sh "$image" -c \
+        'mkdir -p "/d/$(dirname "$1")" && cp "/in/$2" "/d/$1"' sh "$dst" "$base" || exit 1
+    else
+      mkdir -p "$(dirname "$ws/data/$dst")" && cp "$src" "$ws/data/$dst" || exit 1
+    fi
+    echo "== imported data/$dst ($store store); $src is unchanged: delete it when you no longer need it"
+    exit ;;
+  export)
+    # named text files of one sample out of work/ into exports/<name>/ on the host, for the
+    # user (agents never run it): a container that sees that sample's work/ directories
+    # read-only and exports/<name>/ (scripts/export-files.py)
+    n=${1:?usage: ./cupella export <name> <path>...}
+    shift
+    [ $# -gt 0 ] || { echo "usage: ./cupella export <name> <path>..." >&2; exit 1; }
+    [[ "$n" =~ ^[A-Za-z0-9][A-Za-z0-9._()+-]*$ && "$n" != *..* ]] || { echo "bad sample name: $n" >&2; exit 1; }
+    store_is d work "$n" || { echo "no work/$n/" >&2; exit 1; }
+    [ ! -L "$ws/exports" ] && [ ! -L "$ws/exports/$n" ] || { echo "refusing: exports/ or exports/$n is a link" >&2; exit 1; }
+    mkdir -p "$ws/exports/$n"
+    mounts=()
+    store_add mounts work "$n" "/repo/work/$n" ro
+    while IFS= read -r d; do store_add mounts work "$d" "/repo/work/$d" ro; done < <(store_children "$n")
+    exec "$docker" run "${common[@]}" --network none "${mounts[@]}" -v "$ws/exports/$n:/repo/exports/$n" \
+      "$image" scripts/export-files.py "$n" "$@" ;;
+  store)
+    # the storage of data/ and work/: ls (where and how large), rm (delete the volumes)
+    sub=${1:-ls}
+    case $sub in
+      ls)
+        if [ "${2:-}" = --all ]; then
+          # every Cupella volume on this engine, with the workspace it was made for
+          "$docker" volume ls --filter label=cupella.workspace --format '{{.Name}}\t{{.Label "cupella.workspace"}}' \
+            | while IFS=$'\t' read -r v w; do
+                [ -f "$w/.cupella-workspace" ] && st=ok || st=gone
+                printf '%-30s %-5s %s\n' "$v" "$st" "$w"
+              done
+          exit 0
+        fi
+        echo "workspace: $ws"
+        echo "store:     $store"
+        if [ "$store" = volume ]; then
+          for v in "$vol_data" "$vol_work"; do
+            size=$("$docker" run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL --read-only \
+              --mount "type=volume,src=$v,dst=/v,readonly" --entrypoint du "$image" -sh /v 2> /dev/null | cut -f1)
+            printf '  %-28s %s\n' "$v" "${size:-?}"
+          done
+        else
+          for d in data work; do printf '  %-28s %s\n' "$ws/$d" "$(du -sh "$ws/$d" 2> /dev/null | cut -f1)"; done
+        fi
+        mapfile -t samples < <(store_children_all)
+        echo "samples in work/: ${#samples[@]}${samples[*]:+ (${samples[*]})}"
+        # the files in data/: names and sizes only, never their contents
+        # (in the container for both stores: GNU find, and the same output on macOS)
+        dm=()
+        store_add dm data "" /d ro
+        files=$("$docker" run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL --read-only \
+          "${dm[@]}" --entrypoint find "$image" /d -type f -printf '%s\t%P\n' 2> /dev/null || true)
+        echo "files in data/: $(grep -c . <<< "$files" || true)"
+        sort -k2 <<< "$files" | awk -F'\t' 'NF == 2 { printf "  %10d  %s\n", $1, $2 }' | head -50
+        exit 0 ;;
+      rm)
+        # deletes this workspace's volumes, data/ (the samples) and work/ (all output,
+        # including decryptors, progress files, and harness transcripts); reports/ and
+        # exports/ on the host stay
+        [ "$store" = volume ] || { echo "this workspace keeps data/ and work/ as host directories ($ws): delete them yourself" >&2; exit 1; }
+        what=${2:-all}
+        case $what in all) vols=("$vol_data" "$vol_work") ;; work) vols=("$vol_work") ;; *) echo "usage: ./cupella store rm [all|work]" >&2; exit 1 ;; esac
+        [ -t 0 ] || { echo "store rm asks for a confirmation on a terminal" >&2; exit 1; }
+        echo "This deletes ${vols[*]} ($( [ "$what" = all ] && echo "the samples in data/ and " )everything in work/) of $ws. It cannot be undone."
+        read -r -p "Type $ws_id to confirm: " answer
+        [ "$answer" = "$ws_id" ] || { echo "not confirmed; nothing deleted"; exit 1; }
+        "$docker" volume rm "${vols[@]}" > /dev/null || { echo "could not delete (a container still using them? docker ps)" >&2; exit 1; }
+        if [ "$what" = work ]; then
+          "$docker" volume create --label "cupella.workspace=$ws" "$vol_work" > /dev/null \
+            && "$docker" run --rm --network none --user 0 --mount "type=volume,src=$vol_work,dst=/v" --entrypoint chown \
+              "$image" "$(id -u):$(id -g)" /v || exit 1
+          echo "== deleted and recreated $vol_work (empty); data/ is unchanged"
+        else
+          echo "== deleted ${vols[*]}; ./cupella setup --workspace $ws --store volume makes empty ones"
+        fi
+        exit 0 ;;
+      *) echo "usage: ./cupella store [ls [--all] | rm [all|work]]" >&2; exit 1 ;;
+    esac ;;
   shell)    exec "$docker" run -it "${common[@]}" --network none "${analysis[@]}" "$image" bash ;;
+  store-serve)
+    # the API harness's file access to data/ and work/ (harness/store.py): one request
+    # per line on stdin, offline, data/ read-only and work/ read-write, no cache/. The
+    # harness starts it in volume mode; it never parses a sample, only reads text files
+    # for the harness's tools (agent_docs/store-volumes.md "Store helper")
+    [ -t 0 ] && { echo "store-serve is started by ./cupella agent, not by hand" >&2; exit 1; }
+    mounts=()
+    store_add mounts data "" /repo/data ro
+    store_add mounts work "" /repo/work
+    exec "$docker" run -i "${common[@]}" --network none --name "cupella-store-$ws_id-$$" "${mounts[@]}" \
+      -v "$root/harness/store_helper.py:/repo/harness/store_helper.py:ro" "$image" \
+      python3 /repo/harness/store_helper.py /repo ;;
   try-proposal)
     # a proposal tool (proposals/<slug>/tool.py, written by an agent): linted and run like
     # a decryptor, with this sample's directories and the code read-only and only
@@ -436,17 +798,15 @@ case "$cmd" in
     code="$ws/proposals/$slug"
     # the code is mounted into the container: never through a link to somewhere else
     [ -f "$code/tool.py" ] && [ ! -L "$code" ] && [ ! -L "$ws/proposals" ] || { echo "no proposals/$slug/tool.py (write the tool there first)" >&2; exit 1; }
-    [ -d "$ws/work/$n" ] && [ ! -L "$ws/work/$n" ] || { echo "no work/$n/: unpack and scan the sample first" >&2; exit 1; }
-    for p in "$ws/work/$n/proposals" "$ws/work/$n/proposals/$slug"; do
-      [ ! -L "$p" ] || { echo "refusing: $p is a link" >&2; exit 1; }
-    done
-    out="$ws/work/$n/proposals/$slug"
-    mkdir -p "$out"
-    mounts=(-v "$ws/work/$n:/repo/work/$n:ro" -v "$out:/repo/work/$n/proposals/$slug"
-            -v "$code:/repo/proposals/$slug:ro")
-    for d in "$ws/work/$n".emb[0-9]* "$ws/work/$n".dec[0-9]*; do
-      [ -d "$d" ] && [[ "${d#"$ws/work/$n"}" =~ ^(\.(emb|dec)[0-9]+)+$ ]] && mounts+=(-v "$d:/repo/work/$(basename "$d"):ro")
-    done
+    mapfile -t st < <(store_stat work "$n" "$n/proposals" "$n/proposals/$slug")
+    [ "${st[0]}" = d ] || { echo "no work/$n/: unpack and scan the sample first" >&2; exit 1; }
+    [ "${st[1]}" != l ] && [ "${st[2]}" != l ] || { echo "refusing: work/$n/proposals is a link" >&2; exit 1; }
+    store_mkdir "$n/proposals/$slug"
+    mounts=()
+    store_add mounts work "$n" "/repo/work/$n" ro
+    store_add mounts work "$n/proposals/$slug" "/repo/work/$n/proposals/$slug"
+    mounts+=(-v "$code:/repo/proposals/$slug:ro")
+    while IFS= read -r d; do store_add mounts work "$d" "/repo/work/$d" ro; done < <(store_children "$n")
     "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-agent-code.sh \
       "/repo/proposals/$slug" tool.py "/repo/work/$n/proposals/$slug" "/repo/work/$n" "$@" \
       && echo "== output: work/$n/proposals/$slug/"
@@ -454,6 +814,7 @@ case "$cmd" in
 esac
 
 [ -f "$root/scripts/$cmd" ] || { echo "no such script: scripts/$cmd" >&2; exit 1; }
+[ "$cmd" != export-files.py ] || { echo "export-files.py runs only as ./cupella export <name> <path>..." >&2; exit 1; }
 
 case "$cmd" in
   mobsf-scan.py)
@@ -481,13 +842,13 @@ case "$cmd" in
     # read-only and only its decrypt/ writable; phase 2: unpack the outputs as usual
     n=${1:?usage: ./cupella run-decryptor.sh <name>}
     [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. ]] || { echo "bad sample name: $n" >&2; exit 1; }
-    [ -d "$ws/work/$n/decrypt" ] || { echo "no work/$n/decrypt/" >&2; exit 1; }
-    mounts=(-v "$ws/work/$n:/repo/work/$n:ro" -v "$ws/work/$n/decrypt:/repo/work/$n/decrypt")
+    store_is d work "$n/decrypt" || { echo "no work/$n/decrypt/" >&2; exit 1; }
+    mounts=()
+    store_add mounts work "$n" "/repo/work/$n" ro
+    store_add mounts work "$n/decrypt" "/repo/work/$n/decrypt"
     # this sample's children only (<n>.emb<k>, <n>.dec<k>, and theirs), not a sample
     # that merely shares the prefix
-    for d in "$ws/work/$n".emb[0-9]* "$ws/work/$n".dec[0-9]*; do
-      [ -d "$d" ] && [[ "${d#"$ws/work/$n"}" =~ ^(\.(emb|dec)[0-9]+)+$ ]] && mounts+=(-v "$d:/repo/work/$(basename "$d"):ro")
-    done
+    while IFS= read -r d; do store_add mounts work "$d" "/repo/work/$d" ro; done < <(store_children "$n")
     "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/run-decryptor.sh --exec "$n" \
       && offline "$image" scripts/run-decryptor.sh --unpack "$n" ;;
   claims-promote.py)
@@ -497,10 +858,11 @@ case "$cmd" in
     n=${1:-}; role=${2:-}
     [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. && "$role" =~ ^[a-z0-9][a-z0-9-]{0,40}$ ]] \
       || { echo "usage: ./cupella claims-promote.py <name> <role> <D-id>... [--draft] | --list" >&2; exit 1; }
-    d="$ws/work/$n/progress/$role-claims"
+    d="$n/progress/$role-claims"
     mounts=()
-    [ -d "$d" ] && [ ! -L "$d" ] && mounts+=(-v "$d:/repo/work/$n/progress/$role-claims:ro")
-    [ -f "$d.jsonl" ] && [ ! -L "$d.jsonl" ] && mounts+=(-v "$d.jsonl:/repo/work/$n/progress/$role-claims.jsonl:ro")
+    mapfile -t st < <(store_stat work "$d" "$d.jsonl")
+    [ "${st[0]}" = d ] && store_add mounts work "$d" "/repo/work/$d" ro
+    [ "${st[1]}" = f ] && store_add mounts work "$d.jsonl" "/repo/work/$d.jsonl" ro
     [ ${#mounts[@]} -gt 0 ] || { echo "no work/$n/progress/$role-claims/ (or $role-claims.jsonl)" >&2; exit 1; }
     [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/" >&2; exit 1; }
     exec "$docker" run "${common[@]}" --network none "${mounts[@]}" \
@@ -511,10 +873,11 @@ case "$cmd" in
     # container that sees only the verdicts and reports/<name>/, no APK data
     n=${1:-}
     [[ "$n" =~ ^[A-Za-z0-9._-]+$ && "$n" != . && "$n" != .. ]] || { echo "usage: ./cupella claims-merge.py <name>" >&2; exit 1; }
-    v="$ws/work/$n/progress/verify-verdicts"
+    v="$n/progress/verify-verdicts"
     mounts=()
-    [ -d "$v" ] && [ ! -L "$v" ] && mounts+=(-v "$v:/repo/work/$n/progress/verify-verdicts:ro")
-    [ -f "$v.jsonl" ] && [ ! -L "$v.jsonl" ] && mounts+=(-v "$v.jsonl:/repo/work/$n/progress/verify-verdicts.jsonl:ro")
+    mapfile -t st < <(store_stat work "$v" "$v.jsonl")
+    [ "${st[0]}" = d ] && store_add mounts work "$v" "/repo/work/$v" ro
+    [ "${st[1]}" = f ] && store_add mounts work "$v.jsonl" "/repo/work/$v.jsonl" ro
     [ ${#mounts[@]} -gt 0 ] || { echo "no work/$n/progress/verify-verdicts/ (or verify-verdicts.jsonl)" >&2; exit 1; }
     [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/" >&2; exit 1; }
     exec "$docker" run "${common[@]}" --network none "${mounts[@]}" \
@@ -544,8 +907,7 @@ case "$cmd" in
     if [ "$cmd" = report-build.py ]; then
       mounts=()
       [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] && mounts+=(-v "$ws/reports/$n:/repo/reports/$n:ro")
-      f="$ws/work/$n/facts.json"
-      [ -f "$f" ] && [ ! -L "$f" ] && mounts+=(-v "$f:/repo/work/$n/facts.json:ro")
+      store_is f work "$n/facts.json" && store_add mounts work "$n/facts.json" "/repo/work/$n/facts.json" ro
       if [ "$stdout" = 0 ]; then
         [ -d "$ws/reports/$n" ] && [ ! -L "$ws/reports/$n" ] || { echo "no reports/$n/ (claims.jsonl, notes.md)" >&2; exit 1; }
         [ -e "$ws/reports/$n.json" ] || : > "$ws/reports/$n.json"
@@ -565,6 +927,29 @@ case "$cmd" in
       mounts+=(-v "$ws/reports/$n.md:/repo/reports/$n.md")
     fi
     exec "$docker" run "${common[@]}" --network none "${mounts[@]}" "$image" scripts/report-render.py "$@" ;;
+  md-view.py)
+    # a markdown file (a report, or a .md under work/) on the terminal; the script shows
+    # control and bidi characters as visible markers, so only its own colors reach the
+    # terminal. Colors and paging (less -R) only when stdout is a terminal; NO_COLOR
+    # (set and not empty, https://no-color.org) turns the colors off.
+    # CUPELLA_MDVIEW_TTY=1: the API harness, which shows the output on its own terminal
+    # (and pages it), asks for colors and gives the width in COLUMNS
+    tty=0
+    [ -t 1 ] && tty=1
+    cols=$( { [ "$tty" = 1 ] && tput cols 2> /dev/null; } || echo 100)
+    if [ "${CUPELLA_MDVIEW_TTY:-}" = 1 ] && [ "$tty" = 0 ]; then
+      color=1
+      [[ "${COLUMNS:-}" =~ ^[0-9]+$ ]] && cols=$COLUMNS
+    else
+      color=$tty
+    fi
+    [ -z "${NO_COLOR:-}" ] || color=0
+    mdview() { offline -v "$ws/reports:/repo/reports:ro" -e "MDVIEW_COLOR=$color" -e "COLUMNS=$cols" "$image" "scripts/$cmd" "$@"; }
+    if [ "$tty" = 1 ] && command -v less > /dev/null; then
+      mdview "$@" | less -R -F -X
+      exit "${PIPESTATUS[0]}"
+    fi
+    mdview "$@" ;;
   lead-eval.py | cite-check.py | evidence-bundle.py | claims-check.py)
     offline -v "$ws/reports:/repo/reports:ro" "$image" "scripts/$cmd" "$@" ;;
   bench-*.py)
@@ -589,7 +974,8 @@ case "$cmd" in
         && : > "$ws/reports/$name/claims.jsonl" \
         && echo "== wrote reports/$name/ (notes.md, claims.jsonl); scan.sh builds reports/$name.md from facts"
     fi
-    if [ -f "$ws/work/$name/raw/lib/arm64-v8a/libapp.so" ] && [ ! -d "$ws/work/$name/dart/asm" ]; then
+    mapfile -t st < <(store_stat work "$name/raw/lib/arm64-v8a/libapp.so" "$name/dart/asm")
+    if [ "${st[0]}" = f ] && [ "${st[1]}" != d ]; then
       echo "== Flutter app: running the Dart analysis (./cupella flutter-decompile.sh $name)"
       dart_decompile "$name" || echo "== Dart analysis did not complete; the rest of the unpack output is usable"
     fi ;;

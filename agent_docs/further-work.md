@@ -138,7 +138,9 @@ From the agent benchmarks; each is small and testable on the same samples.
   out of tokens; neither has been used end to end yet.
 - The `decryptor` role's shell is limited by its instructions, not technically, in every
   harness so far. A per-agent command allow-list (from the role header) would make it
-  technical where the harness supports one.
+  technical where the harness supports one. Our own harness (`./cupella agent`) enforces
+  it in code; it has passed smoke tests only. Next: a full analysis and a decryptor
+  stage through it, then the benchmarks ([harness-api.md](harness-api.md) "Milestones").
 - Codex and Antigravity have run analyses successfully, but no benchmark and, for
   Codex, no subagent stages. Gemini CLI and Cursor have setup notes in
   [harnesses.md](harnesses.md) and have not run an analysis. Run one sample and one
@@ -276,6 +278,11 @@ From the agent benchmarks; each is small and testable on the same samples.
 
 ## Tooling and operations
 
+- Sample files in Docker volumes (the default for a new workspace without
+  `--harness claude|other`): `data/`, `work/`, and the harness transcripts in volumes,
+  only `reports/` on the host; for `./cupella agent` only. Milestones 1 to 3 built
+  (tests pass; the end-to-end comparison not yet run); untested on Podman and
+  Docker Desktop: [store-volumes.md](store-volumes.md).
 - **Enforced isolation for the agent itself.** The container isolates APK processing,
   but the agent that reads hostile sample-derived text runs on the host, and its command
   limits hold by instruction only (subagent roles, `.claude/settings.json` prefix rules).

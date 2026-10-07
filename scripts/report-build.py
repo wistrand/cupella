@@ -30,6 +30,7 @@ Output: reports/<name>.json
 """
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -107,6 +108,23 @@ def indicators(f, claims, notes_have, added=()):
   return rows
 
 
+def load_costs(name):
+  """[session records] from reports/<name>/costs.jsonl, written by the Cupella API harness
+  at the end of each session; lines that do not parse are skipped"""
+  p = os.path.join(ROOT, "reports", name, "costs.jsonl")
+  out = []
+  if os.path.isfile(p) and not os.path.islink(p):
+    with open(p, errors="replace") as f:
+      for line in f:
+        try:
+          r = json.loads(line)
+        except ValueError:
+          continue
+        if isinstance(r, dict) and isinstance(r.get("agents"), list):
+          out.append(r)
+  return out
+
+
 def export(name, facts, claims, notes, added=()):
   """the report as data"""
   f = facts or {}
@@ -117,6 +135,15 @@ def export(name, facts, claims, notes, added=()):
   def finding(num, c):
     d = {k: c[k] for k in ("id", "status", "threat", "title", "claim", "gate", "confidence", "class", "attack",
                            "inferred", "author", "verdict") if k in c}
+    if isinstance(c.get("map"), str) and re.match(r"^maps/[\w.$+-]+\.md$", c["map"]):
+      # the behavior map's mermaid block, from reports/<name>/maps/ (claims-check checks it)
+      p = os.path.join(ROOT, "reports", name, c["map"])
+      if os.path.isfile(p) and not os.path.islink(p):
+        with open(p, errors="replace") as fh:
+          mm = re.search(r"```mermaid\n.*?\n```", fh.read(), re.S)
+        if mm:
+          d["map"] = {"file": "reports/%s/%s" % (name, c["map"]), "mermaid": mm.group(0),
+                      "note": c.get("map_note", "")}
     d["number"] = num
     ev = []
     for e in c.get("evidence", []):
@@ -145,6 +172,7 @@ def export(name, facts, claims, notes, added=()):
     "indicators": indicators(f, claims, bool(ns.get("Indicators")), added),
     "notes": ns,
     "threat_notes": threats,
+    "costs": load_costs(name),
     "evidence_base": "paths are relative to work/%s/ unless they start with work/ or .dec/.emb" % name,
   }
 

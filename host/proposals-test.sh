@@ -86,3 +86,40 @@ r=0
 grep -q "added: $t/found/deep/c" <<< "$out" && grep -qxF "$t/found/deep/c" "$CUPELLA_REGISTRY" || r=1
 grep -q "work/x" "$CUPELLA_REGISTRY" && r=1
 check "--find adds markers it finds, never inside work/" "$r" "$out"
+
+# ./cupella workspaces rm and --prune
+wsc() { (cd "$root" && env -u CUPELLA_WORKSPACE "$root/cupella" workspaces "$@" 2>&1 < /dev/null) || true; }
+mkdir -p "$t/del/reports" "$t/del/agent_docs"
+printf 'checkout=%s\nharness=other\nstamp=\n' "$root" > "$t/del/.cupella-workspace"
+echo '# r' > "$t/del/reports/x.md"
+echo 'doc' > "$t/del/agent_docs/a.md"
+chmod -R a-w "$t/del/agent_docs"
+echo "$t/del" >> "$CUPELLA_REGISTRY"
+out=$(wsc rm "$t/del")
+r=0; [ -d "$t/del" ] && grep -q 'asks on a terminal' <<< "$out" || r=1
+check "rm asks first and deletes nothing without a terminal or --yes" "$r" "$out"
+out=$(wsc rm "$t/del" --yes)
+r=0; [ ! -e "$t/del" ] && ! grep -qxF "$t/del" "$CUPELLA_REGISTRY" && grep -q 'with 1 reports' <<< "$out" || r=1
+check "rm --yes deletes the directory (read-only copies too) and its entry" "$r" "$out"
+mkdir -p "$t/notws"
+echo keep > "$t/notws/file"
+out=$(wsc rm "$t/notws" --yes || true)
+r=0; [ -f "$t/notws/file" ] && grep -q 'not a Cupella workspace' <<< "$out" || r=1
+check "rm refuses a directory without a marker" "$r" "$out"
+out=$(wsc rm "$root" --yes || true)
+r=0; [ -f "$root/cupella" ] && grep -q 'is the checkout' <<< "$out" || r=1
+check "rm refuses the checkout" "$r" "$out"
+out=$(wsc --prune)
+r=0; ! grep -qxF "$t/gone" "$CUPELLA_REGISTRY" && grep -qxF "$t/a" "$CUPELLA_REGISTRY" && grep -q "dropped: $t/gone" <<< "$out" || r=1
+check "--prune drops gone entries and keeps the rest" "$r" "$out"
+
+# ./cupella workspaces new: the refusals (a successful one is a full setup, with the self-test)
+out=$(wsc new "$t/a" || true)
+r=0; grep -q 'is a workspace already; to repair or refresh it: ./cupella setup --workspace' <<< "$out" || r=1
+check "new refuses an existing workspace and names setup --workspace" "$r" "$out"
+out=$(wsc new "$t/notws" || true)
+r=0; [ -f "$t/notws/file" ] && grep -q 'not an empty directory' <<< "$out" || r=1
+check "new refuses a directory that is not empty" "$r" "$out"
+out=$(wsc new || true)
+r=0; grep -q 'usage: ./cupella workspaces new DIR' <<< "$out" || r=1
+check "new without a directory prints its usage" "$r" "$out"

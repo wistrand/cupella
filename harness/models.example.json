@@ -1,0 +1,38 @@
+{
+  "backends": {
+    "openrouter": {
+      "api": "chat",
+      "base_url": "https://openrouter.ai/api/v1",
+      "key_env": "OPENROUTER_API_KEY",
+      "cache_control": true,
+      "params": {"provider": {"data_collection": "deny"}, "usage": {"include": true}}
+    },
+    "anthropic": {
+      "api": "messages",
+      "base_url": "https://api.anthropic.com/v1",
+      "key_env": "ANTHROPIC_API_KEY",
+      "model_defaults": {"context": 200000, "tools": true},
+      "models": {
+        "claude-opus-5-5": {"context": 1000000, "tools": true, "usd_per_mtok": [4, 20]},
+        "claude-sonnet-5-5": {"context": 1000000, "tools": true, "usd_per_mtok": [2, 10]}
+      }
+    },
+    "local": {
+      "api": "chat",
+      "base_url": "http://127.0.0.1:8000/v1",
+      "models": {"local-model": {"context": 131072, "tools": true, "usd_per_mtok": [0, 0]}}
+    }
+  },
+  "default": {"backend": "openrouter", "model": "anthropic/claude-sonnet-5.5", "max_tokens": 16000},
+  "roles": {
+    "main": {"backend": "openrouter", "model": "anthropic/claude-sonnet-5.5", "cache_ttl": "1h"},
+    "reader": {"backend": "openrouter", "model": "anthropic/claude-sonnet-5.5"},
+    "decryptor": {"backend": "openrouter", "model": "anthropic/claude-sonnet-5.5"}
+  },
+  "stages": {},
+  "spawn_allowed": ["openrouter:anthropic/claude-sonnet-5.5", "openrouter:anthropic/claude-opus-5.5"],
+  "max_usd_per_stage": 5,
+  "max_parallel": 4,
+  "tool_result_chars": 30000,
+  "run_timeout": 3600
+}

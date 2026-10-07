@@ -35,6 +35,7 @@ RUN apt-get update \
       cmake ninja-build g++ pkg-config make zlib1g-dev bison flex \
       python3-pyelftools python3-requests python3-venv python3-dev \
       python3-pycryptodome \
+      zstd brotli \
  && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/tools \
@@ -117,6 +118,8 @@ RUN { printf 'jadx    %s\n' "${JADX_VERSION}"; \
       printf 'java    %s\n' "$(java -version 2>&1 | head -n 1)"; \
       printf 'cstool  %s\n' "$(cstool -v 2>&1 | head -n 1)"; \
       printf 'python  %s\n' "$(python3 --version | cut -d' ' -f2)"; \
+      printf 'zstd    %s\n' "$(zstd -V | head -n 1)"; \
+      printf 'brotli  %s\n' "$(dpkg-query -W -f '${Version}' brotli)"; \
     } > /opt/tools/VERSIONS
 
 # HOME lives on the container's tmpfs; create it before each command (apktool,

@@ -54,10 +54,10 @@ def render(rep):
   idn = f.get("identity", {})
   out = ["# %s" % rep["title"], "", MARK % (name, name, name, name), ""]
 
-  def sec(h, body, empty=None):
+  def sec(h, body, empty=None, title=None):
     """a section: generated body, then the agent's notes; with facts but no rows, the
-    empty text says what was searched"""
-    out.append("## " + h)
+    empty text says what was searched; title replaces h as the heading (appendices)"""
+    out.append("## " + (title or h))
     body = [x for x in body]
     if not body and f and empty:
       body = [empty]
@@ -162,7 +162,8 @@ def render(rep):
     body += ["", "Application flags (`manifest-summary.txt`): %s." % "; ".join(code(x, 80) for x in f["app_flags"])]
   if rows:
     body += ["", "Source: `%s`, `dex/classes.txt` (`behavior-facts.txt` \"Components and the dex\")." % (b.get("manifest") or "manifest.xml")]
-  sec("Components", body, "None declared (`manifest.xml`).")
+  # rendered at the end, as an appendix: a full list that readers rarely need in the body
+  components_body = body
 
   net = f.get("network", {})
   rows = [[code(h["host"], 60), ", ".join(code(u, 80) for u in h["urls"][:8]) + (
@@ -252,7 +253,8 @@ def render(rep):
     if un:
       body += ["", "Using a listed API but reached from no entry point (%d; dead code, reflection, or a library listener):" % len(un), ""]
       body += ["- %s (`%s`): %s" % (code(u["func"], 60), u["ref"], cell(", ".join(u["apis"]))) for u in un[:15]]
-  sec("Behavior facts", body, "No entry point reaches a listed API (`behavior-facts.txt`).")
+  # rendered at the end, as an appendix: the findings cite its rows, readers rarely need it
+  behavior_body = body
 
   # findings
   out.append("## Findings")
@@ -287,6 +289,16 @@ def render(rep):
     if v:
       lines.append("   - Verification (%s): %s%s%s" % (v.get("by", "verify"), v["result"], ": %s" % v["note"] if v.get("note") else "",
                                                  " (%s)" % ", ".join("`%s`" % r for r in v.get("refs", [])[:4]) if v.get("refs") else ""))
+      if v.get("resolution"):
+        lines.append("   - Resolution: %s" % v["resolution"])
+    mp = c.get("map")
+    if mp:
+      lines.append("")
+      # the file name in plain text: cite-check reads backticked paths as work/ citations
+      lines.append("   Behavior map (from %s)%s" % (mp["file"], ": %s" % mp["note"] if mp.get("note") else ""))
+      lines.append("")
+      lines += ["   " + x for x in mp["mermaid"].splitlines()]
+      lines.append("")
     return lines
 
   for t in groups:
@@ -323,7 +335,53 @@ def render(rep):
   sec("Method changes", [])
   if ns.get("Outside references"):
     sec("Outside references", [])
+  sec("Components", components_body, "None declared (`manifest.xml`).", title="Appendix: Components")
+  sec("Behavior facts", behavior_body, "No entry point reaches a listed API (`behavior-facts.txt`).",
+      title="Appendix: Behavior facts")
+  out += ["## Appendix: Cost", ""] + cost_lines(rep.get("costs") or []) + [""]
   return "\n".join(out).rstrip("\n") + "\n"
+
+
+def cost_lines(costs):
+  """the agent sessions behind the report: tokens and cost per role, stage, and model, as
+  the Cupella API harness recorded them (reports/<name>/costs.jsonl)"""
+  if not costs:
+    return ["Not recorded: no `./cupella agent` session wrote to this report. Runs in Claude Code, Codex, "
+            "or another harness do not report token use to Cupella; see \"Agent setup\" in Analysis coverage."]
+  lines = ["Recorded by the Cupella API harness from the token counts and costs the model API reported "
+           "(`reports/<name>/costs.jsonl`). Input is uncached input; cache writes are counted where the API "
+           "reports them.", ""]
+  def num(v):
+    # a count as the harness writes it (an int); anything else is shown as unknown
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else None
+
+  def count(v):
+    return "?" if num(v) is None else "{:,}".format(v)
+
+  rows, total, unknown, skipped = [], 0.0, 0, 0
+  for s in costs:
+    for a in s.get("agents", []):
+      if not isinstance(a, dict):
+        skipped += 1
+        continue
+      usd = a.get("usd")
+      usd = float(usd) if isinstance(usd, (int, float)) and not isinstance(usd, bool) and usd >= 0 else None
+      if usd is None:
+        unknown += 1
+      else:
+        total += usd
+      rows.append([cell(s.get("session", "")), cell(str(s.get("ended") or "")[:16].replace("T", " ")),
+                   cell(a.get("role", "")), cell(a.get("stage", "")), cell(a.get("model", "")),
+                   cell(a.get("provider", "") or "-"), count(a.get("responses", 0)), count(a.get("input", 0)),
+                   count(a.get("cache_read", 0)), count(a.get("cache_write", 0)), count(a.get("output", 0)),
+                   "unknown" if usd is None else "%.2f" % usd])
+  lines += table(["Session", "Ended (UTC)", "Role", "Stage", "Model", "Provider", "Responses", "Input", "Cached",
+                  "Cache writes", "Output", "USD"], rows)
+  lines += ["", "Total: %.2f USD over %d session%s%s%s." % (
+    total, len(costs), "" if len(costs) == 1 else "s",
+    "; %d row%s with an unknown cost not counted" % (unknown, "" if unknown == 1 else "s") if unknown else "",
+    "; %d malformed row%s skipped" % (skipped, "" if skipped == 1 else "s") if skipped else "")]
+  return lines
 
 
 def main():

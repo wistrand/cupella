@@ -52,6 +52,9 @@ Two steps:
   one verdict file per claim; `./cupella claims-merge.py <name>` merges them into the claims'
   `verdict` field (the previous file stays as `claims.jsonl.prev`). Before editing a claim
   found `wrong` or `overstated`, check the code yourself; the verifier can be wrong too.
+  Then set `verdict.resolution`: what changed in the claim, or why it stands.
+  `claims-check.py` reports every such verdict without a resolution (unless the claim is
+  rejected), so a report never ships with a known-overstated claim unaddressed.
 - The JSON holds the facts, the findings in report order (numbered) with entry evidence
   resolved to its Behavior facts row, drafts, rejected ids, claim counts, indicators, and
   the notes as markdown per section. Use it for other tools instead of parsing the
@@ -97,6 +100,8 @@ the agent cannot see, never a guess. Mark a budget run here too.
 
 ## Components
 Exported activities, services, receivers, providers; deep links; guarding permissions.
+Rendered reports put it at the end as "Appendix: Components", before "Appendix:
+Behavior facts"; notes for it still go under `## Components` in `notes.md`.
 
 ## Network
 Hosts and endpoints, cleartext use, network security config, TLS overrides, pinning.
@@ -115,12 +120,20 @@ each was identified; JNI surface of app-specific libraries; which functions were
 read and how (disassembly, decompilation), which were not.
 
 ## Behavior facts
-Rendered reports only, generated from facts.json: entry points with the APIs they reach
-and one chain each, message keys, WebView interfaces, unreached API use. Facts about the
-code, not findings.
+Rendered reports only, generated from facts.json, and rendered at the end as "Appendix:
+Behavior facts": entry points with the APIs they reach and one chain each, message keys,
+WebView interfaces, unreached API use. Facts about the code, not findings. Notes for it
+still go under `## Behavior facts` in `notes.md`.
+
+## Appendix: Cost
+Rendered reports only: tokens and cost per session, role, stage, and model, from
+`reports/<name>/costs.jsonl`, which the Cupella API harness appends at the end of each
+`./cupella agent` session that wrote or built the report (it then rebuilds the report).
+Without that file (Claude Code, Codex) the appendix says the cost was not recorded.
+Never write `costs.jsonl` by hand.
 
 ## Findings
-Numbered, most significant first. Point to rows of "Behavior facts" for chains, gates,
+Numbered, most significant first. Point to rows of "Behavior facts" (the appendix) for chains, gates,
 and message keys instead of repeating them; a finding says what reading the code
 confirmed. Each: what, where (evidence), why it matters,
 confidence. For a malicious or suspected sample, also name its behavior class and the
@@ -155,8 +168,12 @@ claim that matches a public report names the code that matches it.
 
 A behavior map is a small call graph that shows how a finding's behavior is reached:
 the entry point, the functions in between, and the APIs that do the work. Generate it
-with `./cupella behavior-map.py <name> <Class.method>` and paste the Mermaid block it
-writes under the finding, followed by the evidence citations as usual. Use one for each
+with `./cupella behavior-map.py <name> <Class.method>`. In a rendered report, copy the file
+it writes (`work/<name>/maps/<function>.md`) to `reports/<name>/maps/`, edit the block
+there after checking the edges, and set the claim's `"map": "maps/<function>.md"` and
+`"map_note"` (what was removed, added, or relabeled); `report-build.py` puts the block
+under the finding and `claims-check.py` checks the file. In a hand-written report, paste
+the block under the finding, followed by the evidence citations as usual. Use one for each
 finding whose claim depends on a chain (a receiver that leads to an upload, a command
 handler that reaches SMS sending), not for single-function findings. The map shows
 what the call graph contains; reflection, native calls, and dynamically loaded code do

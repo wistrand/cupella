@@ -1,11 +1,11 @@
 # Cupella
 
-Static analysis of Android APKs with a coding agent.
+Static analysis of Android APKs with an AI agent.
 Project site: [wistrand.github.io/cupella](https://wistrand.github.io/cupella/).
 
-Put an APK in `data/` and ask the agent to analyze it. The report lands in `reports/`:
-what the app is, what it requests, its libraries and endpoints, how it is signed, and
-what looks odd. Every claim cites a file and line. Nothing from the APK is executed or
+Import an APK and ask the agent to analyze it. The report lands in `reports/`: what
+the app is, what it requests, its libraries and endpoints, how it is signed, and what
+looks odd. Every claim cites a file and line. Nothing from the APK is executed or
 installed.
 
 Scripts do the extraction. The agent reads the code behind what the scripts found and
@@ -18,64 +18,121 @@ Only the front end and the benchmarks are specific to APKs.
 
 ## Requirements
 
-- Docker, runnable by the current user. Linux (x86_64), or macOS on Apple Silicon with
-  Docker Desktop.
-- A coding agent that reads `AGENTS.md` and runs shell commands, started in this
-  directory. Claude Code ran the benchmarks and the subagent stages; `./cupella setup`
-  generates agent types for it. Codex and Antigravity have also run analyses. Other
-  harnesses: `agent_docs/harnesses.md`.
-- About 3 GB for the image. `work/` needs more: a large app unpacks to a few GB.
-- Python 3 on the host (standard library only), for the gate, `./cupella check`, and
-  the benchmarks. Analyzing samples does not need it.
+- Docker, runnable by the current user: Docker Engine 26 or later (Linux, x86_64), or
+  Docker Desktop 4.29 or later (macOS on Apple Silicon).
+- Python 3 on the host, standard library only.
+- An API key for a model: OpenRouter, Anthropic, or a local server with an
+  OpenAI-style API. Cupella's own agent (`./cupella agent`) calls it.
+- About 3 GB for the image, and a few GB per large app for its unpacked output.
+
+Claude Code, Codex, or another coding agent can run the analysis instead of
+`./cupella agent`; see "With a coding agent" below.
 
 ## Quick start
 
 ```bash
 git clone <this repository> cupella && cd cupella
-./cupella setup   # checks Docker, builds the image once, self-test
-cp ~/Downloads/some.apk data/
-claude            # or your coding agent, started in the checkout
+export OPENROUTER_API_KEY=...                        # the variable your backend names (key_env)
+./cupella workspaces new ~/cases/first               # builds the image once, makes the workspace, self-test;
+                                                     # writes harness/models.json from the example if missing
+cd ~/cases/first
+./cupella import ~/Downloads/some.apk                # copied in; the download is left as it is
+./cupella agent "analyze some"
+./cupella md-view.py reports/some.md                 # read the report on the terminal
 ```
 
-Then ask, for example:
+`./cupella agent` answers and exits. With `--chat` (`-i`) it then waits for follow-ups
+in the same session, which can still read the report it wrote (a later session
+cannot); Enter ends it. Other requests:
 
-- "analyze data/some.apk"
-- "analyze data/some.apk on a budget": fewer subagents and a shorter check, for small
-  token limits. The report says what was left out.
-- "which network endpoints does data/some.apk talk to?"
-- "compare the permissions of data/a.apk and data/b.apk"
+- "analyze some on a budget": fewer subagents and a shorter check, for small token
+  limits. The report says what was left out.
+- "which network endpoints does some talk to?"
+- "compare the permissions of a and b"
+- "show the some report": renders it on your terminal.
 
+`harness/models.json` holds the backends and a model per role (OpenRouter with Claude
+models in the example); edit it to choose others. `./cupella agent --check` tests them; `--model`, `--max-usd`, and
+the other options are in [agent_docs/harness-api.md](agent_docs/harness-api.md).
 `./cupella help` lists the commands and scripts.
+
+### Why this way
+
+- **Role limits in code.** The agent has no shell. It reads, searches, and writes files
+  through tools that check every path after resolving links, and runs a fixed set of
+  `./cupella` commands per role. Subagents that read sample text get no commands at all
+  (readers) or the decryption commands only (decryptor), and write only the files their
+  stage names. No coding-agent harness enforces that much.
+- **Nothing from a sample on your file system.** The workspace keeps `data/` and `work/`
+  (the APK, decompiled code, decoded strings, transcripts) in two Docker volumes. Host
+  indexers, backups, and editors never see them, and your own tools cannot open them by
+  accident. Only `reports/` is a host directory. `./cupella export <name> <path>...`
+  copies a cited file out when you want to look at it.
+- **Any model, per role.** A strong model for the main agent and the verifier, a cheaper
+  one for area readers, or a local one. Token use and cost per stage go into the
+  report's appendix.
+- **Refusals are records.** A response a provider stops is saved with the request and
+  the text before the stop, not lost.
+
+The volume store and the harness are new (2026-10). The benchmark results below come
+from Claude Code runs; through the harness, six model setups have analyzed one malware
+sample so far ([agent_docs/benchmarks.md](agent_docs/benchmarks.md)).
+Design: [agent_docs/harness-api.md](agent_docs/harness-api.md),
+[agent_docs/store-volumes.md](agent_docs/store-volumes.md).
 
 ## Workspaces
 
-To keep cases out of the checkout, make a workspace and work there:
-
-```bash
-./cupella setup --workspace ~/cases/acme  # own data/, work/, reports/; read-only copies of the docs
-cd ~/cases/acme && claude                 # or your coding agent
-```
-
-A workspace has read-only copies of the agent docs and a `./cupella` wrapper that runs
-the checkout. Nothing else in the checkout is reachable from it.
+Each case lives in a workspace made by `./cupella workspaces new DIR`: its own
+`reports/` and `proposals/` on the host, `data/` and `work/` in its volumes, read-only
+copies of the agent docs, and a `./cupella` wrapper that runs the checkout. Nothing else
+in the checkout is reachable from it.
 
 | Task | How |
 |------|-----|
+| Add a sample | `./cupella import <file> [subdir]`. The original is not changed or deleted. |
+| Read a report | `./cupella md-view.py reports/<name>.md`, or open `reports/<name>.md` in any editor. |
+| Open a cited file | `./cupella export <name> work/<name>/...` copies text files to `exports/<name>/`; `./cupella shell` opens a shell in the container. |
+| Disk use | `./cupella store ls` (`--all`: every Cupella volume on this machine). |
 | Update | `git pull` in the checkout. The next `./cupella` run in a workspace refreshes its copies; `./cupella sync` does it now and restores copies edited by hand. |
-| Move the checkout | Rerun `<checkout>/cupella setup --workspace <dir>`. |
+| Move the checkout | Rerun `<checkout>/cupella setup --workspace <dir>`: on an existing workspace it repairs and refreshes it. |
 | Improvements | The agent writes proposals to the workspace's `proposals/` and can try a proposed extraction on the sample with `./cupella try-proposal <slug> <name>` (linted and offline, like a decryptor). You apply them in the checkout, where `./cupella gate` runs. To share them, fork. |
 | Review proposals | `./cupella proposals` in the checkout lists the open ones across workspaces; `./cupella proposals set <workspace> <slug> applied` (or `rejected`) records the decision. |
-| List workspaces | `./cupella workspaces` in the checkout, with sample, report, and open-proposal counts. An older workspace shows up after its next `./cupella` run, or with `./cupella workspaces --find <dir>`. |
-| Git | Setup writes a `.gitignore` once, if none exists: `reports/` and `proposals/` are tracked; samples, `work/`, and generated files never are. |
-| Delete | The doc copies are read-only: `chmod -R u+w <dir> && rm -rf <dir>`. |
+| List workspaces | `./cupella workspaces` in the checkout, with report and open-proposal counts. An older workspace shows up after its next `./cupella` run, or with `./cupella workspaces --find <dir>`. |
+| Git | Setup writes a `.gitignore` once, if none exists: `reports/` and `proposals/` are tracked; samples, `work/`, `exports/`, and generated files never are. |
+| Delete | `./cupella workspaces rm <dir>` deletes its volumes, the directory (with its reports, proposals, and exports), and its entry in the list, after showing what goes and asking for the directory's name. `./cupella workspaces --prune` drops entries for directories already gone. `./cupella store rm work` empties only the work volume. |
+
+## With a coding agent
+
+Claude Code, Codex, or another coding agent that reads `AGENTS.md` and runs shell
+commands can run the analysis instead. Claude Code ran the benchmarks and the subagent
+stages, and `./cupella setup` generates agent types and permission rules for it. Codex
+and Antigravity have also run analyses. Other harnesses:
+[agent_docs/harnesses.md](agent_docs/harnesses.md).
+
+A coding agent reads `work/` with its own file tools, so its workspace keeps `data/` and
+`work/` as host directories:
+
+```bash
+./cupella workspaces new ~/cases/acme --harness claude      # or --harness other
+cp ~/Downloads/some.apk ~/cases/acme/data/
+cd ~/cases/acme && claude                                   # or your coding agent
+```
+
+Then ask it to "analyze data/some.apk". Plain `./cupella setup` sets up the checkout
+itself the same way (its `data/`, `work/`, `reports/`); benchmarks and `./cupella gate`
+run there. Compared with `./cupella agent`, the role limits on subagents hold partly by
+instruction only (see "Safety"), sample-derived files sit on the host file system, and
+the report's cost appendix says the cost was not recorded.
 
 ## Layout
 
 | Path             | Contents                                                          |
 |------------------|-------------------------------------------------------------------|
-| `data/`          | APKs to analyze (benchmark sets in subdirectories)                |
+| `data/`          | APKs to analyze (benchmark sets in subdirectories); a Docker volume in a workspace |
 | `reports/`       | one report per APK                                                |
-| `work/`          | unpacked and decompiled output, safe to delete                    |
+| `work/`          | unpacked and decompiled output, safe to delete; a Docker volume in a workspace |
+| `exports/`       | files you copied out of `work/` with `./cupella export`           |
+| `harness/`       | `./cupella agent`: the agent loop, model adapters, role policy, store |
 | `cache/`         | build cache for the Dart analysis tool                            |
 | `scripts/`       | unpack, scan, lead, and benchmark scripts                         |
 | `prompts/`       | prompt templates for subagent stages and benchmarks               |
@@ -114,7 +171,9 @@ androguard) at pinned versions; full list in
 ## Safety
 
 The agent runs on the host. The APK is parsed only inside the container: no network, no
-capabilities, read-only root, and only `work/` writable. Nothing from an APK is
+capabilities, read-only root, and only `work/` writable. In a volume workspace (the
+default) `data/` and `work/` are Docker volumes, so the APK and everything derived from
+it stay off the host file system; only `reports/` and what you export are there. Nothing from an APK is
 executed, installed, or loaded, and no address found in one is contacted.
 
 Two steps use the network, and say so:
@@ -135,22 +194,35 @@ That code runs in a container with no network that can write only that sample's
 subprocess, network modules, and any module outside the standard library's byte, file,
 and format modules and pycryptodome. The lint is a best-effort filter, not a sandbox.
 
-Subagents that read APK content get no shell (role `reader`), or a shell meant for
-`./cupella run-decryptor.sh`, `./cupella dex-disasm.py`, and the native scripts only
-(role `decryptor`). Claude Code enforces the tool lists of both roles. It does not
-restrict which commands the decryptor's shell runs, and no other harness does either, so
-that list holds by instruction only. The host rules in `.claude/settings.json` (allow
+Subagents that read APK content run no commands (role `reader`), or only
+`./cupella run-decryptor.sh`, `./cupella dex-disasm.py`, and the native scripts (role
+`decryptor`). With `./cupella agent` these limits are code: no agent has a shell, each
+`run` call is checked against the role's command list and its arguments against the
+role's samples, every path is checked after resolving links, and answer keys, earlier
+reports, `data/`, and the harness's own files are denied to every role. In a volume
+workspace the files those tools read are reached through a helper container; on the
+host they do not exist.
+
+With a coding agent, Claude Code enforces the tool lists of both roles but not which
+commands the decryptor's shell runs, and no other harness does either, so that list
+holds by instruction only. The host rules in `.claude/settings.json` (allow
 `./cupella`, deny `adb`, `readelf`, `unzip`, and other parsing tools) are prefix
-matches: a full path or `bash -c` gets around them. Text in an APK that addresses the
-agent is reported as a finding and never followed.
+matches: a full path or `bash -c` gets around them.
+
+Text in an APK that addresses the agent is reported as a finding and never followed.
+Whatever the agent reads goes to the model provider behind it. A local model server
+would keep it on your machine; `./cupella agent` can be configured for one, but that has
+not been tested yet.
 
 For live malware:
 
-- Keep samples under `data/malware/` (gitignored with the rest of `data/`).
+- Use a volume workspace (the default), and import samples under a subdirectory:
+  `./cupella import evil.apk malware`.
 - Keep the file names as they are (letters, digits, `.`, `_`, `-`).
-- Expect reports to contain keys, command names, and indicators in clear text.
-- The agent reads text from the sample on the host, so run the harness session in a VM
-  or under a dedicated user account.
+- Expect reports, and anything you export, to contain keys, command names, and
+  indicators in clear text.
+- The agent still reads text from the sample on the host, in memory: run the session in
+  a VM or under a dedicated user account.
 
 ## How it works
 

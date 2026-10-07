@@ -19,24 +19,28 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 | `work/<name>/`           | derived output per APK, disposable, gitignored                          |
 | `work/<name>/decrypt/`, `work/<name>/proposals/<slug>/`, `work/<name>/progress/` | agent outputs, kept by `unpack.sh -f`: the decryption stage, proposal tool output, progress files |
 | `work/<name>.emb<k>/`, `work/<name>.dec<k>/` | child samples: payloads found by content or decrypted by script (`payload-decrypt.py`), and payloads decrypted by the decryption stage |
-| `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs, evidence bundles (`work/_evidence/<name>/`), APKs taken out of sample archives (`work/_samples/`) |
+| `work/_*/`               | not samples: reference cache, gate metrics, agent benchmark runs, evidence bundles (`work/_evidence/<name>/`), APKs taken out of sample archives (`work/_samples/`), API harness sessions (`work/_harness/`) and refused responses (`work/_stops/`) |
 | `reports/<name>.md`      | the analysis report, the only authored output per sample                |
+| `exports/<name>/`        | text files the user copied out of `work/` with `./cupella export` (a volume workspace's way to open cited files); agents never read it; gitignored |
 | `scripts/`               | everything that runs in the container (mounted read-only)               |
 | `prompts/`               | prompt templates for subagent stages (`decrypt.md`, `verify-report.md`, `read-area.md`, `verify.md`); `prompts/bench/` for benchmarks |
 | `AGENTS.md`              | the instructions for any coding agent; `CLAUDE.md` imports it for Claude Code |
 | `roles/`                 | harness-neutral subagent roles: `reader` (no shell), `decryptor` (listed `./cupella` commands only) |
 | `.claude/agents/`        | Claude Code agent types `apk-reader`, `apk-decryptor`, generated from `roles/` by `./cupella setup` |
-| `cupella`                | wrapper: runs a script from `scripts/` in the container; also `setup` (first use, workspaces), `build`, `versions`, `shell`, `sync`, `try-proposal`, `proposals`, `workspaces`, `gate`, `check`, `help` |
+| `cupella`                | wrapper: runs a script from `scripts/` in the container; also `setup` (first use, workspaces), `import`, `agent`, `export`, `store`, `store-serve`, `build`, `versions`, `shell`, `sync`, `try-proposal`, `proposals`, `workspaces`, `model-compare`, `gate`, `check`, `help` |
 | `proposals/`             | in a workspace: one proposed script or doc change per file (`<slug>.md`, slug `<YYYY-MM-DD>-<topic>`), its tool if any (`<slug>/tool.py`), decisions on them are kept in the checkout (`.cupella-decisions.tsv`) |
 | `.cupella-workspaces`, `.cupella-decisions.tsv` | in the checkout: workspaces made from it (added by setup and by each workspace run) and the decisions on their proposals; read by `./cupella workspaces` and `./cupella proposals`; gitignored |
 | `bench-setup`            | fetches the benchmark datasets, checked against `bench-sources/` (host side; downloads and extraction only) |
 | `bench-sources/`         | source and hash of every benchmark file; never shown to analysis agents |
 | `docs/`                  | the project web site (static, GitHub Pages: serve from `docs/`); not agent documentation, which is `agent_docs/` |
 | `.claude/settings.json`  | project permission rules: `./cupella` allowed, host parsing tools and `adb` denied |
-| `.cupella-workspace`     | marks a workspace made by `./cupella setup --workspace` and records the checkout path, the harness, and a stamp of the copied docs. A workspace has its own `data/`, `work/`, `reports/`, `proposals/`; read-only copies of `AGENTS.md`, `agent_docs/`, `prompts/`, `roles/`; `WORKSPACE.md`; a `cupella` wrapper; for Claude Code also `CLAUDE.md`, `.claude/settings.json`, and agent types. Every `./cupella` run there refreshes the copies when the checkout changed |
+| `.cupella-workspace`     | marks a workspace made by `./cupella workspaces new` (or `setup --workspace`) and records the checkout path, the harness, and a stamp of the copied docs. A workspace has its own `data/`, `work/`, `reports/`, `proposals/`; read-only copies of `AGENTS.md`, `agent_docs/`, `prompts/`, `roles/`; `WORKSPACE.md`; a `cupella` wrapper; for Claude Code also `CLAUDE.md`, `.claude/settings.json`, and agent types. Every `./cupella` run there refreshes the copies when the checkout changed |
 | `host/gate.sh`           | benchmark gate for rule changes, run as `./cupella gate baseline`, then `./cupella gate` |
 | `host/workspaces.sh`     | `./cupella workspaces`: the workspaces made from this checkout with their APK, report, and open-proposal counts; `--find DIR` adds older ones |
 | `host/proposals.sh`      | `./cupella proposals`: lists workspace proposals with their state, records decisions in the checkout's `.cupella-decisions.tsv` (never in a workspace, so an agent there cannot mark its own proposals) |
+| `harness/`               | the API harness, `./cupella agent`: loop, adapters, tools, role policy; configuration in `harness/models.json` ([harness-api.md](harness-api.md)) |
+| `host/model-compare.py`  | `./cupella model-compare <name> <spec>...`: the same analysis through the API harness once per model; each run's outputs and a summary table under `work/_bench-models/`, its report files under `reports/_archive/model-compare/` |
+| `host/harness-test.py`   | checks the API harness's role policy and adapters, no network; run by `./cupella check` |
 | `host/proposals-test.sh` | checks `./cupella proposals` and `./cupella workspaces` on throwaway workspaces with their own registry; run by `./cupella check` |
 | `host/try-proposal-test.sh` | checks `./cupella try-proposal` on a throwaway workspace (tool runs, sample and code read-only, lint, refused names and links); run by `./cupella check` |
 | `host/check.sh`          | regression run after script changes, run as `./cupella check [--no-gate]`: fixtures, native fixture (built with the host's clang), `cite-check.py` on every report, gate |
@@ -59,6 +63,8 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `axml2xml.py`                 | binary XML to text, tolerant of tampered manifests; fallback when apktool fails |
 | `dexlist.py`                  | class names and string pool from dex files, no decompiler needed        |
 | `sample-archive.py`           | lists a password-protected sample archive (ZipCrypto or WinZip AES, password "infected" by default) and extracts the APK in it to `work/_samples/`; `data/` is not changed |
+| `parquet-samples.py`          | lists the APKs stored in a Parquet file (binary or base64 columns, flat or struct; codecs none, snappy, gzip, LZ4_RAW, zstd, brotli) and extracts chosen rows to `work/_samples/<name>.apk`, names guessed from file name, package and version, or a matching hash column, else the sha256; writes `work/_samples/<file>.index.tsv`; `--describe` (and `--list` when nothing is found) says what each column holds |
+| `parquet-pack.py`             | packs APKs from `data/` or `work/_samples/` into `work/_parquet/<out>.parquet`, one per row (file_name, sha256, size, apk; `--struct` for apk {bytes, path}; `--codec none\|gzip\|snappy\|zstd`, `--v2`; `--layout family` for score, family, content with `--family`, `--score`): test data for `parquet-samples.py`, or a set of samples in a dataset's format |
 | `embedded.py`                 | finds dex and dex archives inside the APK by content                    |
 | `payload-decrypt.py`          | decrypts payloads whose key is a constant in the APK: tries DES, 3DES, AES, RC4, and XOR with every dex string, byte array, and native string on files that look encrypted, and keeps results that are a dex, a ZIP with dex, or an ELF; `unlocked/`, `unlocked.txt` (cipher, key, where the key is), `encrypted-left.txt` (not decrypted); run by `unpack.sh`, which unpacks the results as `.emb<k>` |
 | `manifest-summary.py`         | permissions, app flags, reachable components with filters, priorities, task attributes |
@@ -81,6 +87,7 @@ Pipeline (run by `unpack.sh` and `scan.sh` unless noted):
 | `claims-check.py`             | checks `reports/<name>/claims.jsonl`: schema (documented in the script), refs, quotes against the code, entry rows in `facts.json` |
 | `report-build.py`             | builds `reports/<name>.json` (`cupella-report/1`, the report as data) from `facts.json`, `claims.jsonl`, `notes.md`, `indicators.jsonl`, then `./cupella` runs `report-render.py`; each in a container with only its inputs and output; `--stdout [--md]` previews |
 | `report-render.py`            | renders `reports/<name>.json` as `reports/<name>.md`; reads nothing else |
+| `md-view.py`                  | shows a `.md` under `reports/` or `work/` on the terminal (colors unless `NO_COLOR`, tables, paged by `less -R`); control, bidi, and invisible characters appear as `<U+XXXX>`, links as text, never terminal hyperlinks |
 | `claims-promote.py`           | copies a reader's checked draft claims (`progress/<role>-claims/D<n>.json`, one file per claim; `<role>-claims.jsonl` from before) into `reports/<name>/claims.jsonl` with the next `F` ids; `--list`; container with only those |
 | `claims-merge.py`             | merges the verifier's `progress/verify-verdicts/<id>.json` (one file per claim; `verify-verdicts.jsonl` from before) into `reports/<name>/claims.jsonl` (`verdict` per claim; keeps `claims.jsonl.prev`); container with only those |
 
@@ -142,6 +149,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella claims-check.py <name>                  # rendered reports: claims schema, refs, quotes
 ./cupella report-build.py <name> [--replace|--stdout [--md]]   # reports/<name>.json from facts, claims, notes; then the .md
 ./cupella report-render.py <name> [--replace|--stdout]   # reports/<name>.md from the JSON alone
+./cupella md-view.py reports/<name>.md [--plain]  # read a report on the terminal (works in a volume workspace)
 ./cupella claims-merge.py <name>                 # verifier verdicts into claims.jsonl
 ./cupella claims-promote.py <name> <role> D1 D3 [--draft] | --list   # reader drafts into claims.jsonl
 ./cupella xref.py <name> <Class.method|FUN_...|Class::method> [--depth N]
@@ -158,6 +166,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella fixtures/zipslip-test.sh                # extraction stays inside the sample; decompression limits hold
 ./cupella fixtures/injection-test.sh              # the injection scan sees every place text hides
 ./cupella fixtures/manifest-tricks-test.sh        # a manifest hidden by ZIP and binary-XML tricks is still read
+./cupella fixtures/md-view-test.sh                # md-view.py passes no control, escape, or bidi character from a file
 ./cupella fixtures/elf-headers-test.sh <lib.so>...# the ELF reader without section headers
 ./cupella native-disasm.py <lib.so> --jni         # annotated disassembly; see runbook-native
 ./cupella native-decompile.sh <lib.so> [fn]       # Ghidra C output
@@ -168,9 +177,22 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella run-decryptor.sh <name>                 # decryption stage
 ./cupella try-proposal <slug> <name> [args]       # proposals/<slug>/tool.py on one sample -> work/<name>/proposals/<slug>/
 ./cupella workspaces [--find DIR ...]             # workspaces made from this checkout, with counts
+./cupella workspaces rm DIR [--yes] | --prune     # delete a workspace (volumes, directory, list entry), or drop gone entries
 ./cupella proposals [--all] [workspace ...]        # open (or all) proposals of every workspace
+./cupella import <file> [subdir]                  # copy a sample into data/ (host or volume store)
+./cupella export <name> <path>...                 # copy text files of a sample's work/ to exports/<name>/ (the user only)
+./cupella store ls [--all]                        # where data/ and work/ are, volume sizes; --all: every Cupella volume
+./cupella store rm [all|work]                     # delete a volume workspace's volumes (asks for its id first)
+./cupella workspaces new DIR [--store volume]     # a new workspace; default: data/ and work/ in Docker volumes, ./cupella agent
+./cupella workspaces new DIR --harness claude     # host directories, for Claude Code (or --store host)
+./cupella setup --workspace DIR                   # an existing workspace: repair (checkout moved) and refresh generated files
+./cupella agent "<request>" | --resume <name>     # the API harness (harness/models.json); --check tests the models
+./cupella store-serve                             # the volume store helper; started by ./cupella agent, never by hand
 ./cupella proposals set <ws> <slug> applied|rejected|open [note]   # record a decision (checkout only)
 ./cupella sample-archive.py data/<file>.zip        # a sample that came as a password-protected archive: APK to work/_samples/
+./cupella parquet-samples.py data/<file>.parquet [--list] [--rows N,M-K]   # APKs in a Parquet dataset to work/_samples/, names guessed
+./cupella parquet-pack.py <out> <apk>... [--codec gzip] [--struct] [--v2]   # APKs into work/_parquet/<out>.parquet
+./cupella fixtures/parquet-samples-test.sh        # the Parquet reader on files written by a minimal writer and by parquet-pack.py
 ./cupella cite-check.py <name>                    # before finishing a report
 ./cupella evidence-bundle.py <name>               # for a report to be published: the cited lines as work/_evidence/<name>/
 ./cupella lead-eval.py [-v] <name>                # lead files vs. the report's Findings
@@ -200,7 +222,7 @@ containers that write there (`report-build.py`, `report-render.py`, `claims-merg
 `claims-promote.py`) see only their inputs (`facts.json`, the verdict or draft files, the
 report sources) and their outputs, no `data/` and no `work/` tree.
 
-Mount exceptions: `cite-check.py` and `lead-eval.py` also see `reports/`, and
+Mount exceptions: `cite-check.py`, `lead-eval.py`, and `md-view.py` also see `reports/`, and
 `bench-*.py` see `bench/`, both read-only. `run-decryptor.sh` runs the decryptor with
 only that sample's directories mounted, read-only except its `decrypt/`.
 `./cupella try-proposal` mounts the same, read-only except `work/<name>/proposals/<slug>/`,

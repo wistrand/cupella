@@ -50,6 +50,30 @@ user; never guess passwords, and never extract with host tools or write to `data
 Check that the printed sha256 is the one the file is named after, and say in the
 report's Identity that the APK came out of an archive.
 
+When the samples come as a Parquet file (a dataset with one APK per row in a binary
+column, often next to a hash, a file name, a package name, or a label), list it first and
+extract the rows the user asked for:
+
+```bash
+./cupella parquet-samples.py data/<file>.parquet --list          # every APK row: size, sha256, guessed name
+./cupella parquet-samples.py data/<file>.parquet --rows 3,7      # those rows to work/_samples/<name>.apk
+./cupella unpack.sh work/_samples/<name>.apk
+```
+
+- A name comes from a file name column, a package name (and version), or a hash column
+  that matches the bytes, else the APK's sha256; the output says which column. A hash
+  column that does not match the bytes is reported: say so in the report.
+- `work/_samples/<file>.index.tsv` keeps each APK row's other short values (labels,
+  families, sources). Cite it in Identity for where the APK came from; a label in a
+  dataset is a lead, not a finding.
+- When `--list` finds no APK it describes each column instead (type, codec, value sizes,
+  a guess at the format from the first bytes, the most common short values);
+  `--describe` always does. A dataset of Windows PE files (`MZ`) or other formats is
+  not an APK set: say so instead of analyzing it.
+- At most 20 APKs per run unless `--max N` or `--all`; never extract a whole dataset
+  without the user asking for it. Lists inside rows, LZO, and Hadoop-framed LZ4 are not
+  read; the output names the column and the reason.
+
 `scripts/unpack.sh` (run in the container by `./cupella`) produces:
 
 | Output                 | From                          | Use                                              |
