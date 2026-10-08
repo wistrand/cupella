@@ -16,15 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"   # the image's Python (./cupella versions)
       - name: Quick checks
         run: host/ci-quick.sh
       - name: Output of the checks
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-quick
           path: work/_ci/*.txt
