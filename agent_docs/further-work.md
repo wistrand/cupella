@@ -278,6 +278,13 @@ From the agent benchmarks; each is small and testable on the same samples.
 
 ## Tooling and operations
 
+- CI: the Docker-free checks run on every push and pull request (`host/ci-quick.sh`,
+  `.github/workflows/ci.yml`, 2026-10-08). Open: a weekly or manual job with the image
+  (cached build; the container fixtures, `try-proposal` and `export` tests, the native
+  fixture, the image build itself as a check on pinned downloads); a test of
+  `./cupella store-serve` against a real volume; a golden test of `report-render.py`
+  (a committed report JSON and its expected markdown); a `--ci` mode for `check.sh`.
+
 - Sample files in Docker volumes (the default for a new workspace without
   `--harness claude|other`): `data/`, `work/`, and the harness transcripts in volumes,
   only `reports/` on the host; for `./cupella agent` only. Milestones 1 to 3 built

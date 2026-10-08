@@ -219,7 +219,11 @@ out=$(run "$w/not.parquet")
 check "a non-Parquet file is refused" "$(yes grep -q 'not a Parquet file' <<< "$out")"
 # parquet-pack.py and back: a fake APK from work/_samples/, each codec and layout it writes
 cp "$s/$a4sha.apk" "$s/cupellafixture-pack.apk"
+# zstd only where the tool is (the image has it; a host run of this fixture may not)
+have_zstd=0
+command -v zstd > /dev/null && have_zstd=1
 for opts in "--codec none" "--codec gzip --struct" "--codec snappy --v2" "--codec gzip --struct --v2" "--codec zstd"; do
+  if [[ "$opts" == *zstd* && "$have_zstd" = 0 ]]; then echo "pack and read back ($opts): SKIP (no zstd)"; continue; fi
   tag=$(tr -c 'A-Za-z0-9\n' _ <<< "$opts")
   python3 scripts/parquet-pack.py "cupellafixture-$tag" work/_samples/cupellafixture-pack.apk $opts > /dev/null 2>&1 || true
   out=$(run "work/_parquet/cupellafixture-$tag.parquet" --list)
@@ -227,6 +231,7 @@ for opts in "--codec none" "--codec gzip --struct" "--codec snappy --v2" "--code
   rm -f "work/_parquet/cupellafixture-$tag.parquet"
 done
 for c in gzip snappy zstd; do
+  if [ "$c" = zstd ] && [ "$have_zstd" = 0 ]; then echo "pack --layout family --codec zstd: SKIP (no zstd)"; continue; fi
   python3 scripts/parquet-pack.py "cupellafixture-family-$c" work/_samples/cupellafixture-pack.apk --layout family --codec $c > /dev/null 2>&1 || true
   out=$(run "work/_parquet/cupellafixture-family-$c.parquet" --describe)
   check "pack --layout family --codec $c: the dictionary pages read back" "$(grep -q 'most common: benign 1' <<< "$out" && grep -q "sha256 $a4sha" <<< "$out" && ! grep -q problem <<< "$out" && echo 1 || echo 0)"

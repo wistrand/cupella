@@ -44,6 +44,7 @@ Lookup material for the tools. The order of work is in [workflow.md](workflow.md
 | `host/proposals-test.sh` | checks `./cupella proposals` and `./cupella workspaces` on throwaway workspaces with their own registry; run by `./cupella check` |
 | `host/try-proposal-test.sh` | checks `./cupella try-proposal` on a throwaway workspace (tool runs, sample and code read-only, lint, refused names and links); run by `./cupella check` |
 | `host/check.sh`          | regression run after script changes, run as `./cupella check [--no-gate]`: fixtures, native fixture (built with the host's clang), `cite-check.py` on every report, gate |
+| `host/ci-quick.sh`       | the quick checks that need no Docker (syntax of every script, `harness-test.py`, `proposals-test.sh`, the md-view and Parquet fixtures on the host, synthetic data only); run by `.github/workflows/ci.yml` on every push and pull request, output in `work/_ci/` |
 | `Dockerfile`             | the analysis image; tool versions pinned here                           |
 | `bench/`                 | benchmark metadata and answer keys; gitignored; never shown to analysis agents |
 | `cache/`                 | blutter builds per Dart version; gitignored, safe to delete (costs a rebuild) |
@@ -198,6 +199,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella lead-eval.py [-v] <name>                # lead files vs. the report's Findings
 ./cupella gate baseline; ./cupella gate           # rule loop
 ./cupella check [--no-gate]                       # regression run after script changes
+host/ci-quick.sh                                  # the Docker-free part, as CI runs it (about a minute)
 ./cupella model-leads.py <name> [java-scope ...]  # experimental, off by default; needs llav
 ./cupella --llav <script> [args]                  # any script that imports llav_client
 ```
