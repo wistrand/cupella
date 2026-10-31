@@ -202,3 +202,8 @@ Follow [design-report.md](design-report.md), with these adjustments:
   the blutter output; URLs and string literals remain, so `--strings` still works.
 - If the project is open source, comparing against the source is a useful cross-check.
   Say that it shows the source, not this binary.
+- **Deduplicated Dart code carries the wrong name (verified).** Release snapshots
+  are built with `dedup_instructions`: functions with identical machine code are
+  merged, and a call shows the name of whichever copy survived. The Flutter app's
+  `MistralController::stop` appears to call `AnthropicClient::endSession`. Trust such
+  a name for what the code does, not for which class it belongs to.

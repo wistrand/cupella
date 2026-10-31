@@ -265,7 +265,11 @@ def main():
   entries = []
   for u in allu:
     if u.kind == "java":
-      comp = u.file[len("jadx/sources/"):-5]
+      # by the binary class name (jadx may have renamed the package directory, me ->
+      # p258me; units.py restores the original), else by the file path
+      comp = u.inner.replace(".", "/")
+      if comp not in comps:
+        comp = u.file[len("jadx/sources/"):-5]
       if comp in comps and JAVA_ENTRY.match(u.name):
         entries.append((u, "%s %s" % (comps[comp], u.name)))
     elif u.kind == "native":

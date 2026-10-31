@@ -313,7 +313,9 @@ def compute(name, scopes=None, depth=5):
 
   # entry points
   def entry_kind(u):
-    comp = comp_classes.get(u.file[len("jadx/sources/"):-5])
+    # by the binary class name first: jadx may have renamed the package directory
+    # (me -> p258me) or the class, and units.py restores the original name
+    comp = comp_classes.get(u.inner.replace(".", "/")) or comp_classes.get(u.file[len("jadx/sources/"):-5])
     if comp and COMPONENT_ENTRY.match(u.name):
       return "%s callback" % comp["kind"]
     src = os.path.join(work, u.file)

@@ -26,8 +26,8 @@ in [design-report.md](design-report.md).
 | Endpoints, SDKs, trackers                 | 1, 2, the network and telemetry sections of the leads | answer in the reply, or a report if asked |
 | "Analyze X" (full analysis)               | 1 to 5, 7, 8                                        | `reports/<name>.md` |
 | "Analyze X on a budget", or a harness with a small token limit | see "Budget mode" | `reports/<name>.md`, marked as a budget run |
-| Security review                           | full analysis plus the Vulnerability checklist ([runbook-analysis.md](runbook-analysis.md)), verification required | `reports/<name>.md` |
-| Malware: what does it do                  | full analysis plus "Malware samples" ([runbook-analysis.md](runbook-analysis.md)), decryption when code is hidden, verification required | `reports/<name>.md` |
+| Security review                           | full analysis plus the vulnerability checklist ([runbook-vulns.md](runbook-vulns.md)), verification required | `reports/<name>.md` |
+| Malware: what does it do                  | full analysis plus [runbook-malware.md](runbook-malware.md), decryption when code is hidden, verification required | `reports/<name>.md` |
 | Compare two versions                      | 1 on both, then `./cupella apk-diff.py <old> <new> > work/<new>/diff-from-<old>.txt`; read the code behind each change | answer, or a section in the newer report |
 
 A question about one fact needs no report. Write a report when the user asks for an
@@ -43,9 +43,10 @@ analysis, or when the answer needs more than a few cited lines.
 - A sample that came as a password-protected archive (`data/<sha256>.zip` from a malware
   repository) is taken out with `./cupella sample-archive.py data/<file>.zip`; the APK
   lands in `work/_samples/<name>.apk`, and `unpack.sh` takes that path. Never extract it
-  with host tools, and never write to `data/`. APKs stored in a Parquet file (a sample
+  with host tools, and never write to `data/`. A split-APK bundle (`.apkm`, `.xapk`)
+  goes through the same script, which names each APK after the bundle. APKs stored in a Parquet file (a sample
   dataset) come out the same way with `./cupella parquet-samples.py data/<file>.parquet`
-  ([runbook-analysis.md](runbook-analysis.md)).
+  ([runbook-inputs.md](runbook-inputs.md)).
 - `<name>` is the APK filename without `.apk`. Every stage keys on it: `work/<name>/`,
   `reports/<name>.md`. `./cupella run-decryptor.sh` accepts only names made of letters,
   digits, `.`, `_`, and `-`; ask the user to rename a file before staging it if needed.
@@ -67,7 +68,7 @@ analysis, or when the answer needs more than a few cited lines.
    The anti-analysis sections (ZIP anomalies, symlink entries, tool time limits, class
    coverage) say what the tools could not see; carry them into "Analysis coverage".
    Flutter and React Native switch the code reading to
-   [runbook-flutter.md](runbook-flutter.md) or the React Native section of the runbook.
+   [runbook-flutter.md](runbook-flutter.md) or [runbook-react-native.md](runbook-react-native.md).
 2. **Scan.** `./cupella scan.sh <name>`. Check the `scope:` and `scope source:` lines of
    `scan.txt` against the triage's package table; rerun with an explicit parent when
    the app's code is elsewhere (the scope is then kept for later scans). Embedded
@@ -214,7 +215,7 @@ use starts a role is in [harnesses.md](harnesses.md) (Claude Code: agent types
   `jadx-strings/` (same line numbers as `jadx/sources/`, plaintext in comments) and the children it unpacks. Read `NOTES.md` before citing a
   key or algorithm, and check that each child in `outputs.txt` decompiled.
 - Name subagent output files after their content, never `report*`: Claude Code, for one, refuses
-  a subagent's write to a file named like a report ([gotchas.md](gotchas.md)).
+  a subagent's write to a file named like a report ([harnesses.md](harnesses.md)).
 - Reader output is `work/<name>/progress/<role>-claims/D<n>.json`, one draft claim per
   file, which the main agent promotes with `./cupella claims-promote.py`;
   the final message is one line. Agent output is one record per write: a reader has no

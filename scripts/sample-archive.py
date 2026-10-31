@@ -6,6 +6,12 @@ Malware repositories hand out samples as password-protected ZIP files (password
 and is never changed, so the APK goes to work/_samples/<member name>, from where
 unpack.sh takes it like any APK.
 
+Split-APK bundles (.apkm from APKMirror, .xapk, .apks: a base.apk next to split_*.apk
+or config.*.apk members) go through the same path. Their member names say nothing about
+the app, so each APK is named after the archive instead: base.apk becomes
+<archive stem>.apk, a split <archive stem>.<split name>.apk. The base comes first, then
+the ABI splits (native code), then the rest, so the member limit drops resource splits.
+
 Nothing is executed. Only members that are ZIP archives themselves (an APK is one) are
 extracted, at most MAX_MEMBERS of them, each limited to APK_TOTAL_MAX bytes (default
 8 GiB as in apkunzip.py) and written without following links; names are reduced to
@@ -79,6 +85,32 @@ def read_aes(fh, info, password, strength, method):
   raise ValueError("compression method %d not supported" % method)
 
 
+ABI_SPLIT = re.compile(r"(?:^|[._])(arm64_v8a|armeabi_v7a|armeabi|x86_64|x86|mips64|mips)\.apk$", re.I)
+
+
+def member_base(info):
+  return os.path.basename(info.filename.replace("\\", "/")).lower()
+
+
+def is_bundle(infos):
+  """a split-APK bundle: a base.apk member next to split or config APKs"""
+  names = [member_base(i) for i in infos]
+  return "base.apk" in names and any(n.endswith(".apk") and (n.startswith(("split_", "config.")))
+                                     for n in names)
+
+
+def bundle_order(info):
+  """base first, then ABI splits (arm64 first), then the other members in archive order"""
+  n = member_base(info)
+  if n == "base.apk":
+    return (0, 0)
+  m = ABI_SPLIT.search(n)
+  if m:
+    return (1, ["arm64_v8a", "armeabi_v7a", "x86_64", "x86"].index(m.group(1).lower())
+            if m.group(1).lower() in ("arm64_v8a", "armeabi_v7a", "x86_64", "x86") else 4)
+  return (2, 0)
+
+
 def main():
   args = sys.argv[1:]
   password, only_list = b"infected", False
@@ -104,6 +136,10 @@ def main():
   out_dir = os.path.join(ROOT, "work", "_samples")
   done = 0
   written = set()
+  bundle = is_bundle(infos)
+  if bundle:
+    infos = sorted(infos, key=bundle_order)
+  stem_of_archive = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.splitext(os.path.basename(path))[0]) or "sample"
   with open(path, "rb") as fh:
     for info in infos[:200]:
       aes = aes_extra(info)
@@ -127,6 +163,9 @@ def main():
       base = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(info.filename.replace("\\", "/"))) or "sample"
       if not base.lower().endswith(".apk"):
         base += ".apk"
+      if bundle:
+        member = base[:-4]
+        base = stem_of_archive + (".apk" if member.lower() == "base" else ".%s.apk" % member)
       os.makedirs(out_dir, exist_ok=True)
       # two members with one base name (in different folders of the archive) stay apart
       stem, k = base[:-4], 1

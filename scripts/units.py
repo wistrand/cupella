@@ -19,7 +19,8 @@ files), file, start and end line (Java, Dart), name, cls, lines (body text), cal
 of units whose address it takes; native only), addr (native, Dart), meta (Java:
 the signature line; Dart: the dart-index Func), and for Java inner (the binary
 name of the declaring class, e.g. "pkg.Outer$Inner") and bname (the method's name in
-bytecode). Both come from jadx's "renamed from" comments where jadx renamed.
+bytecode). Both come from jadx's "renamed from" comments where jadx renamed; a package
+segment jadx prefixed (me -> p258me) is restored from the path.
 
 Java call graph (checked against androguard by callgraph-check.py):
   mapping   each function has one dex method: same class, bytecode name, and parameters
@@ -60,6 +61,7 @@ JAVA_NOT_CALLS = {"if", "for", "while", "switch", "catch", "synchronized", "retu
 JAVA_CLASS = re.compile(r"^\s*(?:(?:public|private|protected|static|final|abstract|sealed|non-sealed|strictfp)\s+)*"
                         r"(?:class|interface|enum|@interface|record)\s+([\w$]+)")
 JAVA_RENAMED = re.compile(r"/\* JADX INFO: renamed from: ([^,\s*]+)")
+JADX_PKG_PREFIX = re.compile(r"^p\d{3}")
 JAVA_RUN = ("run", "call", "invoke", "handleMessage", "doWork", "onReceive", "accept", "apply", "invokeSuspend")
 # calls that hand a Runnable, Callable, or Message to another thread or a looper
 SCHEDULE = re.compile(r"->(post|postDelayed|postAtTime|postAtFrontOfQueue|postOnAnimation|sendMessage|"
@@ -127,7 +129,9 @@ def _java_file_units(path, rel):
   out = []
   cur, depth, start, name, sig = None, 0, 0, "?", ""
   cls = os.path.basename(rel)[:-5]
-  pkg = os.path.dirname(rel).replace("/", ".")
+  # jadx prefixes a package segment it had to rename (me -> p258me, in -> p001in);
+  # the binary name keeps the original, as class-coverage.py also assumes
+  pkg = ".".join(JADX_PKG_PREFIX.sub("", x) for x in os.path.dirname(rel).split("/"))
   pkg = "" if pkg == "defpackage" else pkg + "." if pkg else ""
   top = pkg + cls
   # brace depth of the file, counted outside literals and comments; nested classes

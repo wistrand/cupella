@@ -53,6 +53,14 @@ file when an item is done or new evidence moves it.
    base APK of a split install has no `libapp.so` (4 MalEval samples); `triage.txt` and
    `flutter-summary.txt` say so since 2026-10-03, and the benchmark should count such
    apps apart.
+5. **Split-APK bundles as one sample.** `sample-archive.py` extracts a bundle's base and
+   ABI splits under the bundle's name (2026-10-31), and `native-summary.py` reads a
+   config split's JNI classes and load sites from the base unpacked next to it. The base
+   and its ABI split are still two samples: native functions are not in the base's call
+   graph, and the report cites the split by its full path. Next step: `unpack.sh` taking
+   a bundle and placing the ABI split's `lib/` under the base's `raw/`. Also seen there:
+   JNI names with a digit after an underscore (`Java_com_eclipsesource_v8_V8_...`) are
+   split into the wrong class, so J2V8 shows "class not in dex" although its classes ship.
 
 ## Detection gaps
 
@@ -82,7 +90,7 @@ From the agent benchmarks; each is small and testable on the same samples.
   the analysis should make before writing: code that tests for a permission the app
   never requests does not run), and the BTMOB rerun (below). The first two times the Write tool refused the verifier's output
   file: Claude Code blocks subagent writes to files named like reports (see
-  [gotchas.md](gotchas.md)); the output file is now `verification.md`. Run it on the other reports and on a
+  [harnesses.md](harnesses.md)); the output file is now `verification.md`. Run it on the other reports and on a
   benchmark slice to see whether it removes errors without removing true findings.
 - The coverage critic (a fresh agent that lists checklist items, exported components,
   and lead sections the report did not examine) is not built yet; it targets the
@@ -244,7 +252,7 @@ From the agent benchmarks; each is small and testable on the same samples.
 - **Merged-lambda case selection** (done 2026-10-03, gate PASS, 100 metrics; launcher B
   structure leads 5,504 to 4,492 distinct functions, same findings covered). The
   discriminator-field switch is done (2026-10-03); control-flow case bodies were tried and
-  reverted ([gotchas.md](gotchas.md)).
+  reverted ([development.md](development.md)).
 - **Call graph check** (`callgraph-check.py`, 2026-10-03): androguard (in the image with
   Quark) against `dex.py` and `units.py`. On 7 analyzed samples: decoding agrees (launcher
   B: 11 of 206,995 methods differ, all array `clone()` naming), every jadx function has
@@ -273,10 +281,29 @@ From the agent benchmarks; each is small and testable on the same samples.
   no longer make native callers.
   Merged-lambda classes now switch on the lambda-number field when there is one. Left:
   case bodies are still read linearly (following control flow was tried and reverted,
-  [gotchas.md](gotchas.md)), and Runnables passed as parameters or to libraries have no edge.
+  [development.md](development.md)), and Runnables passed as parameters or to libraries have no edge.
   Gate PASS (2026-10-03).
 
 ## Tooling and operations
+
+- Agent docs by trigger (2026-10-08): `gotchas.md` went from 627 to 241 lines after an
+  audit of its 125 entries. Entries a script handles and duplicates of the runbooks were
+  removed, development traps moved to `development.md`, and the rest became a Core
+  section plus sections with a "Read when" trigger. The same day `runbook-analysis.md`
+  (527 to 383 lines) gave its trigger-only parts to `runbook-inputs.md`,
+  `runbook-vulns.md`, `runbook-malware.md`, and `runbook-react-native.md`, and
+  `AGENTS.md`'s script and doc conventions moved to `development.md`. The always-read set
+  went from about 131,700 to about 80,000 characters. Open: shortening the trigger
+  entries of `gotchas.md`; a line budget for the always-read docs in
+  `host/ci-quick.sh`. A run before and after on two samples (benchmarks.md "Docs before
+  and after the restructure") showed no benefit yet: slightly higher cost and fewer
+  confirmed claims after, within what one run per side can tell; the reports' findings
+  are still to be compared by hand before cutting more or restoring entries.
+- Script gaps found by that audit: `scan.sh`'s greps lacked `-a` and it did not mark a
+  section that reached `SCAN_MAX` (both fixed 2026-10-08: `-a` on every grep over
+  decompiled or resource text, and a `[capped: N of M hits shown]` line). Open: the triage's "declares:" lines are a text match on the manifest
+  (`unpack.sh`); no script flags a debug certificate, unpacks `.xapk`/`.apks`, or
+  compares a `.dec<k>` child with the `.emb<k>` children.
 
 - CI: the Docker-free checks run on every push and pull request (`host/ci-quick.sh`,
   `.github/workflows/ci.yml`, 2026-10-08). Open: a weekly or manual job with the image

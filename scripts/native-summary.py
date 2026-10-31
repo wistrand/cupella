@@ -314,6 +314,42 @@ def load_calls(root_dir):
   return [line[:220] for line in out.split("\n") if line]
 
 
+def code_sample(root_dir):
+  """the work directory whose dex and jadx output hold this sample's Java side: the
+  sample itself, or for a config split (manifest split="config.<abi>", no code) the
+  base of the same package unpacked next to it; (directory, note)"""
+  try:
+    with open(os.path.join(root_dir, "manifest.xml"), errors="replace") as f:
+      head = f.read(4000)
+  except OSError:
+    return root_dir, None
+  m = re.search(r'<manifest\b[^>]*\bsplit="([^"]+)"', head)
+  pm = re.search(r' package="([^"]+)"', head)
+  if not m or not pm:
+    return root_dir, None
+  work = os.path.dirname(os.path.abspath(root_dir))
+  me = os.path.basename(os.path.abspath(root_dir))
+  bases = []
+  for d in sorted(os.listdir(work)):
+    if d == me or d.startswith("_") or not os.path.isfile(os.path.join(work, d, "dex", "classes.txt")):
+      continue
+    try:
+      with open(os.path.join(work, d, "manifest.xml"), errors="replace") as f:
+        h = f.read(4000)
+    except OSError:
+      continue
+    if ' package="%s"' % pm.group(1) in h and not re.search(r'<manifest\b[^>]*\bsplit="', h):
+      bases.append(d)
+  # the bundle naming of sample-archive.py (<base>.<split>) first, else the only candidate
+  best = [d for d in bases if me.startswith(d + ".")] or (bases if len(bases) == 1 else [])
+  if not best:
+    return root_dir, ("split APK (%s) of %s: no single unpacked base found next to it (%d candidates), "
+                      "so JNI classes and load sites below are from this file, which has no code"
+                      % (m.group(1), pm.group(1), len(bases)))
+  base = max(best, key=len)
+  return os.path.join(work, base), "split APK (%s): JNI classes and load sites are from the base, work/%s/" % (m.group(1), base)
+
+
 def main():
   if len(sys.argv) >= 3 and sys.argv[1] == "--file":
     describe(Elf(sys.argv[2]), os.path.basename(sys.argv[2]), None)
@@ -349,8 +385,9 @@ def main():
     print("No native libraries in this APK.")
     return
 
+  code_dir, split_note = code_sample(root_dir)
   dex_classes = None
-  cpath = os.path.join(root_dir, "dex", "classes.txt")
+  cpath = os.path.join(code_dir, "dex", "classes.txt")
   if os.path.exists(cpath):
     with open(cpath) as f:
       dex_classes = {line.rstrip("\n").split("\t")[-1] for line in f}
@@ -405,8 +442,10 @@ def main():
   if clean:
     print("- same libraries, exported functions, and sensitive imports across all ABIs")
 
-  calls = load_calls(root_dir)
+  calls = load_calls(code_dir)
   print("\n## Java load sites")
+  if split_note:
+    print("- %s" % split_note)
   if calls is None:
     print("- jadx output not available")
   elif not calls:

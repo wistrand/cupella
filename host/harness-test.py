@@ -201,6 +201,15 @@ def suite(tag, ws, st, top):
          not denied(rs.check_read, "work/app.dec1") and denied(rs.check_read, "work/app.decoy"))
   check_("reader scope: glob characters in a sample name are literal", pol.esc("a*?[") == "a[*][?][[]")
   check_("repair: no near-miss move to another sample", repair.fix_path(st, "work/othet/triage.txt", True, []) == "work/othet/triage.txt")
+  os.makedirs(top("work/app/progress"), exist_ok=True)
+  with open(top("work/app/progress/reader-x.md"), "w") as fh:
+    fh.write("1 started\n")
+  check_("repair: a write into a new directory keeps its path (not a similar file's)",
+         repair.fix_path(st, "work/app/progress/reader-x-claims/D1.json", False, []) == "work/app/progress/reader-x-claims/D1.json")
+  tw = Tools(FakeH(), pol.sub_policy(ws, root, "reader", ["app"], [], ["work/app/progress/reader-x.md", "work/app/progress/reader-x-claims/"], store=st),
+             "work/_harness/t/claims")
+  check_("a reader's first claim lands in its new claims directory",
+         "wrote work/app/progress/reader-x-claims/D1.json" in tw.call("write_file", {"path": "work/app/progress/reader-x-claims/D1.json", "content": "{}"}))
   tmain = Tools(FakeH(), pol.main_policy(ws, root, st), "work/_harness/t/main")
   try:
     tmain.call("run", {"script": "scan.sh", "args": ["app"], "stdout_to": "work/app/triage.txt"})

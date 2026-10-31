@@ -11,17 +11,27 @@ Two checks, each run when it applies:
                   literals of the binary present in those sources? This shows
                   consistency with the sources, not a reproducible build.
 
-NETWORK: this script downloads from a fixed list of public registries and nowhere
-else: storage.googleapis.com/download.flutter.io and pub.dev/api/archives. Every
-redirect is checked against the same list before it is followed, and so is the final
-URL; a redirect anywhere else is refused and reported.
-It sends only public identifiers taken from the binary (an engine commit hash, a
-package name and version). It never contacts hosts named inside the APK. At most
-MAX_LOOKUPS (50) downloads per run; a failed lookup is reported and the run goes on.
-Downloads are cached in work/_reference/.
+NETWORK: ./cupella runs this in three steps, so that the sample and the network never
+meet in one container:
 
-Usage: scripts/reference-check.py <name> [flutter-engine|pub-sources]
-       (output is meant to be saved as work/<name>/reference-check.txt)
+  --plan <name>    offline, with the sample: writes work/<name>/reference-plan.tsv, the
+                   public identifiers to look up (an engine commit hash and ABI, a package
+                   name and version), each matching a strict pattern; nothing else
+  --fetch <plan>   networked, seeing only that plan file and the cache work/_reference/:
+                   checks every line against the same patterns again, builds the URLs
+                   itself, and downloads from a fixed list of public registries and nowhere
+                   else (storage.googleapis.com/download.flutter.io, pub.dev/api/archives).
+                   Every redirect and the final URL are checked against the same list; a
+                   redirect anywhere else is refused and reported. At most MAX_LOOKUPS (50)
+                   downloads per run; a failed lookup is recorded next to the cache entry.
+  <name>           offline, with the sample and the cache read-only: compares and prints
+                   the report (archives are unpacked here, not in the networked step)
+
+It never contacts hosts named inside the APK.
+
+Usage: ./cupella reference-check.py <name> [flutter-engine|pub-sources]
+       (output is meant to be saved as work/<name>/reference-check.txt; the fetch step
+       reports on standard error)
 """
 import hashlib
 import io
@@ -39,6 +49,7 @@ from elf import Elf  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 CACHE = os.path.join(ROOT, "work", "_reference")
+TMP = os.path.join(os.environ.get("TMPDIR", "/tmp"), "cupella-reference")
 ALLOWED = ("https://storage.googleapis.com/download.flutter.io/", "https://pub.dev/api/archives/")
 ENGINE_ABI = {"arm64-v8a": "arm64_v8a", "armeabi-v7a": "armeabi_v7a", "x86_64": "x86_64", "x86": "x86"}
 SRC_EXT = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".inc", ".m", ".mm", ".S", ".s",
@@ -61,6 +72,35 @@ class AllowListRedirect(urllib.request.HTTPRedirectHandler):
 
 
 OPENER = urllib.request.build_opener(AllowListRedirect)
+
+
+# what a plan line may hold: these shapes and nothing else go to the network
+PLAN_RE = {
+  "flutter-engine": re.compile(r"(arm64-v8a|armeabi-v7a|x86_64|x86)\t([0-9a-f]{40})"),
+  "pub": re.compile(r"([A-Za-z0-9_]{1,64})\t(\d+\.\d+\.\d+[A-Za-z0-9.+-]{0,40})"),
+}
+
+
+def engine_target(abi, h):
+  art = "%s_release" % ENGINE_ABI[abi]
+  url = "https://storage.googleapis.com/download.flutter.io/io/flutter/%s/1.0.0-%s/%s-1.0.0-%s.jar" % (art, h, art, h)
+  return url, os.path.join(CACHE, "flutter-engine", "%s-%s.jar" % (art, h))
+
+
+def pub_target(pkg, ver):
+  url = "https://pub.dev/api/archives/%s-%s.tar.gz" % (pkg, ver)
+  return url, os.path.join(CACHE, "pub", "%s-%s.tar.gz" % (pkg, ver))
+
+
+def cached(dest):
+  """200 when the cache holds the download, else the reason the fetch step recorded"""
+  if os.path.exists(dest):
+    return 200
+  try:
+    with open(dest + ".status") as f:
+      return f.read().strip()[:200] or "not fetched"
+  except OSError:
+    return "not fetched (run it as ./cupella reference-check.py, which fetches first)"
 
 
 def fetch(url, dest):
@@ -107,6 +147,75 @@ def abis(name):
   return {a: os.path.join(lib, a) for a in sorted(os.listdir(lib))} if os.path.isdir(lib) else {}
 
 
+def engine_hashes(buf):
+  return sorted(set(m.decode() for m in re.findall(rb"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", buf)))
+
+
+def pub_abi(name):
+  all_abis = abis(name)
+  return all_abis, next((a for a in ("arm64-v8a", "armeabi-v7a", "x86_64", "x86") if a in all_abis), None)
+
+
+def plan(name, which):
+  """offline: the identifiers to look up, one tab-separated line each"""
+  lines = []
+  if which in ("all", "flutter-engine"):
+    for abi, d in abis(name).items():
+      path = os.path.join(d, "libflutter.so")
+      if abi in ENGINE_ABI and os.path.isfile(path):
+        with open(path, "rb") as f:
+          lines += ["flutter-engine\t%s\t%s" % (abi, h) for h in engine_hashes(f.read())]
+  if which in ("all", "pub-sources"):
+    all_abis, abi = pub_abi(name)
+    if abi:
+      found = set()
+      for f in sorted(os.listdir(all_abis[abi])):
+        with open(os.path.join(all_abis[abi], f), "rb") as fh:
+          found |= {(p.decode(), v.decode()) for p, v in PUB_PATH.findall(fh.read())}
+      lines += ["pub\t%s\t%s" % pv for pv in sorted(found)]
+  kept = [x for x in lines if PLAN_RE.get(x.split("\t", 1)[0]) and PLAN_RE[x.split("\t", 1)[0]].fullmatch(x.split("\t", 1)[1])]
+  dst = os.path.join(ROOT, "work", name, "reference-plan.tsv")
+  fd = os.open(dst + ".part", os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+  with os.fdopen(fd, "w") as f:
+    f.write("".join(x + "\n" for x in kept))
+  os.replace(dst + ".part", dst)
+  print("reference plan: %d lookups (%d dropped: not the expected shape)" % (len(kept), len(lines) - len(kept)),
+        file=sys.stderr)
+
+
+def fetch_plan(path):
+  """networked: the plan's lookups, each line checked again, the URL built here"""
+  # this step must see no sample: a wrong mount fails here, before any lookup
+  seen = [x for x in ("data",) if os.path.exists(os.path.join(ROOT, x))]
+  work = os.path.join(ROOT, "work")
+  seen += ["work/" + x for x in (os.listdir(work) if os.path.isdir(work) else []) if x != "_reference"]
+  if seen:
+    sys.exit("refusing to fetch: this networked step sees %s; run it as ./cupella reference-check.py" % ", ".join(seen[:5]))
+  with open(path, encoding="ascii", errors="replace") as f:
+    lines = f.read().splitlines()
+  if len(lines) > 1000:
+    sys.exit("reference plan too long")
+  for line in lines:
+    kind, _, rest = line.partition("\t")
+    m = PLAN_RE.get(kind) and PLAN_RE[kind].fullmatch(rest)
+    if not m:
+      print("refused plan line (not the expected shape): %r" % line[:80], file=sys.stderr)
+      continue
+    url, dest = engine_target(*m.groups()) if kind == "flutter-engine" else pub_target(*m.groups())
+    was = os.path.exists(dest)
+    status = fetch(url, dest)
+    if status == 200:
+      try:
+        os.remove(dest + ".status")
+      except OSError:
+        pass
+    else:
+      with open(dest + ".status", "w") as f:
+        f.write(str(status) + "\n")
+    print("%s: %s" % (url, "cached" if was else status), file=sys.stderr)
+  print("%d network lookups (cap %d per run; cached downloads not counted)" % (lookups, MAX_LOOKUPS), file=sys.stderr)
+
+
 def check_flutter_engine(name):
   print("## Flutter engine")
   found = False
@@ -118,15 +227,13 @@ def check_flutter_engine(name):
     with open(path, "rb") as f:
       buf = f.read()
     ours = hashlib.sha256(buf).hexdigest()
-    hashes = sorted(set(m.decode() for m in re.findall(rb"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", buf)))
+    hashes = engine_hashes(buf)
     print("- %s/libflutter.so: %d bytes, sha256 %s" % (abi, len(buf), ours))
     print("  commit-like hashes embedded: %s" % (", ".join(hashes) or "none"))
     matched = False
     for h in hashes:
-      art = "%s_release" % ENGINE_ABI[abi]
-      url = "https://storage.googleapis.com/download.flutter.io/io/flutter/%s/1.0.0-%s/%s-1.0.0-%s.jar" % (art, h, art, h)
-      dest = os.path.join(CACHE, "flutter-engine", "%s-%s.jar" % (art, h))
-      status = fetch(url, dest)
+      url, dest = engine_target(abi, h)
+      status = cached(dest)
       if status != 200:
         print("  %s: no official release artifact (%s)" % (h, status))
         continue
@@ -221,8 +328,7 @@ def load_corpus(src_root):
 
 def check_pub_sources(name):
   print("## Libraries built from pub.dev packages")
-  all_abis = abis(name)
-  abi = next((a for a in ("arm64-v8a", "armeabi-v7a", "x86_64", "x86") if a in all_abis), None)
+  all_abis, abi = pub_abi(name)
   if abi is None:
     print("- no native libraries")
     return
@@ -242,16 +348,21 @@ def check_pub_sources(name):
 
   for (pkg, ver), libs in sorted(by_pkg.items()):
     print("\n### %s %s" % (pkg, ver))
-    url = "https://pub.dev/api/archives/%s-%s.tar.gz" % (pkg, ver)
-    dest = os.path.join(CACHE, "pub", "%s-%s.tar.gz" % (pkg, ver))
-    status = fetch(url, dest)
+    url, dest = pub_target(pkg, ver)
+    status = cached(dest)
     if status != 200:
       print("- package archive not available (%s): %s" % (status, url))
       continue
-    src = os.path.join(CACHE, "pub", "%s-%s" % (pkg, ver))
+    # unpacked here, offline, into a temporary directory: the cache keeps only what the
+    # networked step downloaded
+    src = os.path.join(TMP, "pub", "%s-%s" % (pkg, ver))
     if not os.path.isdir(src):
-      with tarfile.open(dest) as t:
-        t.extractall(src, filter="data")
+      try:
+        with tarfile.open(dest) as t:
+          t.extractall(src, filter="data")
+      except (tarfile.TarError, OSError) as ex:
+        print("- package archive unreadable (%s): %s" % (ex, url))
+        continue
     print("- published archive: %s (sha256 %s)" % (url, sha256(dest)))
     corpus, idents, nfiles = load_corpus(src)
     print("- %d source files in the package" % nfiles)
@@ -316,6 +427,13 @@ def check_pub_sources(name):
 def main():
   if len(sys.argv) < 2:
     sys.exit(__doc__)
+  if sys.argv[1] == "--fetch" and len(sys.argv) == 3:
+    return fetch_plan(sys.argv[2])
+  if sys.argv[1] == "--plan" and len(sys.argv) in (3, 4):
+    name = sys.argv[2]
+    if not os.path.isdir(os.path.join(ROOT, "work", name, "raw")):
+      sys.exit("work/%s/raw not found: run scripts/unpack.sh first" % name)
+    return plan(name, sys.argv[3] if len(sys.argv) == 4 else "all")
   name = sys.argv[1]
   which = sys.argv[2] if len(sys.argv) > 2 else "all"
   if not os.path.isdir(os.path.join(ROOT, "work", name, "raw")):
@@ -327,7 +445,8 @@ def main():
     print()
   if which in ("all", "pub-sources"):
     check_pub_sources(name)
-  print("\n%d network lookups (cap %d per run; cached downloads not counted)" % (lookups, MAX_LOOKUPS))
+  print("\nDownloads from the cache work/_reference/, filled by the networked step before this one "
+        "(its log is on standard error).")
 
 
 if __name__ == "__main__":

@@ -102,7 +102,10 @@ def signing(tri):
         certs.setdefault(cur["sha256"], cur)
       cur = None
   schemes = []
-  if any(x.startswith("-- v1") for x in lines):
+  # unpack.sh prints the "-- v1" header always; keytool then says "Not a signed jar
+  # file" and apksig-verify.py "v1 (JAR) signature: none" when there is no v1 signature
+  no_v1 = any(x.strip() in ("Not a signed jar file", "v1 (JAR) signature: none") for x in lines)
+  if any(x.startswith("-- v1") for x in lines) and not no_v1:
     schemes.append("v1")
   for line in lines:
     m = re.match(r"^(v[234](?:\.1)?): (\d+) certificate", line.strip())

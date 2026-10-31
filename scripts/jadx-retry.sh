@@ -36,6 +36,8 @@ max=${JADX_RETRY_MAX:-40}
 python3 - "$out" "$@" > "$out/jadx-retry.todo" <<'EOF'
 import os, re, sys
 out, prefixes = sys.argv[1], sys.argv[2:]
+# scopes are jadx paths; the log uses bytecode names: undo jadx's package prefix (p258me -> me)
+prefixes = [re.sub(r"(^|/)p\d{3}", r"\1", p) for p in prefixes]
 classes = {}
 with open(os.path.join(out, "dex", "classes.txt")) as f:
   for line in f:

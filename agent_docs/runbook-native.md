@@ -259,8 +259,8 @@ State these under "Analysis coverage" when they apply:
 - IL2CPP (Unity) needs Il2CppDumper, which is not installed: report what strings and
   the bundled metadata show and say the logic was not read. Dart AOT (`libapp.so`)
   and Hermes bytecode have tools in the image: Flutter goes to
-  [runbook-flutter.md](runbook-flutter.md), Hermes to the React Native section of
-  [runbook-analysis.md](runbook-analysis.md).
+  [runbook-flutter.md](runbook-flutter.md), Hermes to
+  [runbook-react-native.md](runbook-react-native.md).
 - Packed or encrypted libraries cannot be analyzed statically past the loader.
 - Annotations cover arm64. Other ABIs get plain disassembly with direct call names on
   x86 only.

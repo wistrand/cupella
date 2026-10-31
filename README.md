@@ -178,7 +178,9 @@ executed, installed, or loaded, and no address found in one is contacted.
 
 Two steps use the network, and say so:
 
-- `./cupella reference-check.py`, which compares libraries against official builds.
+- `./cupella reference-check.py`, which compares libraries against official builds. Only
+  its download step has the network, and that container sees a file of public
+  identifiers (an engine commit, a package name and version), not the APK.
 - The build of the Dart analysis tool, the first time a Flutter app with a new Dart
   version comes in. It runs automatically, takes several minutes, and its container
   cannot see the APK.

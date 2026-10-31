@@ -173,6 +173,13 @@ def fix_path(ws, path, must_exist, notes):
     if p != path:
       notes.append(f"path {path!r} taken as {p!r}")
     return p
+  if not must_exist:
+    # a write: a missing directory is made, never "repaired" into a similar name (a
+    # reader's first claim in progress/<role>-claims/ went to progress/<role>.md/,
+    # which the policy refused, and its claims were lost, 2026-10-08)
+    if p != path:
+      notes.append(f"path {path!r} taken as {p!r}")
+    return p
   parts = p.split("/")
   if len(parts) >= 2 and parts[0] == "work" and not st.exists(f"work/{parts[1]}"):
     s = sample_prefix(st, parts[1])

@@ -106,7 +106,7 @@ On demand:
 | `native-decompile.sh`         | Ghidra headless decompile to C (postprocessed by `ghidra/postprocess.py`) |
 | `dart-index.py`               | condensed listing of a Dart function from blutter output                |
 | `apk-diff.py`                 | changes between two unpacked APKs                                       |
-| `reference-check.py`          | compares native libraries with official builds and pub.dev sources (network) |
+| `reference-check.py`          | compares native libraries with official builds and pub.dev sources (network, in a separate container that sees only the identifiers looked up) |
 | `run-decryptor.sh`            | lints and runs an agent-written decryptor locked down, then unpacks and scans its outputs as `.dec<k>` (not `out/parts/`), annotates strings, removes stale children |
 | `agent-code-lint.py`          | rejects agent-written code (decryptors, proposal tools) that could run code or reach the network |
 | `run-agent-code.sh`           | lints and runs agent-written Python with read-only copies and one writable working directory; used by `run-decryptor.sh` and `./cupella try-proposal` |
@@ -200,6 +200,7 @@ sees every place text can hide). Run them with `./cupella fixtures/<name>`.
 ./cupella gate baseline; ./cupella gate           # rule loop
 ./cupella check [--no-gate]                       # regression run after script changes
 host/ci-quick.sh                                  # the Docker-free part, as CI runs it (about a minute)
+host/docs-compare.sh <apk> <backend:model> [old-ref]   # one analysis on old docs (a git ref) and on this checkout's; costs money
 ./cupella model-leads.py <name> [java-scope ...]  # experimental, off by default; needs llav
 ./cupella --llav <script> [args]                  # any script that imports llav_client
 ```
@@ -245,7 +246,12 @@ host (Homebrew's llvm on macOS).
 Everything runs with `--network none` except:
 
 - `reference-check.py`: lookups in a fixed allow-list of public registries, sending
-  only public identifiers.
+  only public identifiers. Three containers: the plan (offline, with the sample)
+  writes `work/<name>/reference-plan.tsv`, each line an engine commit and ABI or a
+  package name and version of a fixed shape; the fetch (networked) sees only that file
+  and `work/_reference/`, checks each line again, and refuses to run if it can see
+  `data/` or a sample; the comparison (offline) unpacks the downloads and prints the
+  report.
 - Building blutter for a Dart version that `cache/` does not have: automatic, in a
   container with `scripts/` and `cache/` but not `data/` or `work/`. It takes several
   minutes once per Dart version; let it finish.

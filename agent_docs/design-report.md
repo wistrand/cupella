@@ -137,7 +137,7 @@ Numbered, most significant first. Point to rows of "Behavior facts" (the appendi
 and message keys instead of repeating them; a finding says what reading the code
 confirmed. Each: what, where (evidence), why it matters,
 confidence. For a malicious or suspected sample, also name its behavior class and the
-MITRE ATT&CK Mobile technique IDs that fit (see runbook-analysis "Malware samples"),
+MITRE ATT&CK Mobile technique IDs that fit (see [runbook-malware.md](runbook-malware.md)),
 and group the findings under the threats they serve (for example "Credential theft",
 "SMS interception", "Payload download"), each threat with its findings beneath it.
 For security weaknesses, mark each as a vulnerability (exploitable as described) or a
@@ -179,7 +179,7 @@ handler that reaches SMS sending), not for single-function findings. The map sho
 what the call graph contains; reflection, native calls, and dynamically loaded code do
 not appear in it, so say when the chain was completed by reading. In R8-obfuscated code
 check each edge in the source before using a map: merged lambda classes create false
-edges ([gotchas.md](gotchas.md)). A Runnable or Handler held in a field (or the object
+edges (how they arise: [development.md](development.md)). A Runnable or Handler held in a field (or the object
 itself) and handed to `Handler.post`, `sendMessage`, an executor, or `Thread.start` is a
 dotted `later` edge; check in the code that the posted object is that one. One created
 with `new` at the call is an ordinary edge. A dotted `outside` edge passes through one

@@ -13,6 +13,7 @@ at the right code); agent benchmarks measure what an agent reports after reading
 - Tool comparison
 - Quark leads as a lead source
 - Models through the API harness (2026-10-06)
+- Docs before and after the restructure (2026-10-08)
 - What the numbers do not say
 
 ## Datasets
@@ -34,7 +35,7 @@ its source and checks it against the hashes in `bench-sources/`. Then unpack and
 `./cupella scan.sh`), and record the gate baseline (`./cupella gate baseline`). Baselines
 recorded before 2026-10-03 named report metrics by the first 24 characters of the
 report name; record a new one before the next `./cupella gate`. The current baseline
-(2026-10-04) has 121 metrics: Ghera, MalEval, and lead coverage of 10 reports.
+(2026-10-31) has 162 metrics: Ghera, MalEval, and lead coverage of 16 reports.
 
 After changing `scan.sh`, `scope.py`, `structure-leads.py`, `units.py`, or the unpack
 steps, rescan and rerun:
@@ -318,6 +319,45 @@ Results and the per-finding table: `work/_bench-models/20261006T085416-*/compari
   `resolution` on each.
 - Rerun Gemini with the fix before ranking it.
 - Muse-Glimmer details: `work/_bench-models/20261006T103749-*/findings.md`.
+
+## Docs before and after the restructure (2026-10-08)
+
+The same analysis through the API harness on the agent docs before the restructure
+(commit `989e8bd`: `gotchas.md` 627 lines, `runbook-analysis.md` 527) and after it (Core
+and triggered sections in `gotchas.md`, 241 lines; `runbook-analysis.md` 383 lines with
+four triggered runbooks split off), everything else the same: scripts, harness, image,
+model (`openrouter:openai/gpt-5.6-sol`), request, and `--max-usd 5`. One run per side,
+with `host/docs-compare.sh`. Counts from `model-compare`; the findings themselves have
+not been compared yet.
+
+| Sample | Docs | Cost | Main turns | Stages | Confirmed claims | Verdicts | Citations |
+|--------|------|------|------------|--------|------------------|----------|-----------|
+| 23282313 (DDoS bot loader, native payload) | after | $2.71 | 72 | decrypt, 4 readers, verify | 13 | 10 hold, 3 overstated | 240 |
+| 23282313 | before | $2.19 | 41 | decrypt, 4 readers, verify | 15 | 14 hold, 1 overstated | 241 |
+| F-Droid | after | $3.36 | 28 | 6 readers, 2 verifiers | 23 | 23 hold | 444 |
+| F-Droid | before | $3.15 | 34 | 6 readers, verify | 36 | 35 hold, 1 overstated | 545 |
+
+- The shorter docs did not show a benefit: both pairs cost a little more and confirmed
+  fewer claims after the restructure. Two runs per side cannot separate that from
+  run-to-run variance (the malware pair's main agents took 72 and 41 turns on the same
+  inputs), and claim counts are not quality: one agent may split a finding into several
+  claims.
+- Cost per main-agent turn fell with the shorter docs ($0.038 against $0.053 on the
+  malware sample): less text is carried per request. Total cost follows the number of
+  turns, which the docs did not reduce.
+- The main agents read the same docs on both sides: `runbook-analysis.md`,
+  `design-report.md`, `runbook-native.md`, `gotchas.md` (after the restructure also
+  `runbook-malware.md` on the malware sample). They read `gotchas.md` nearly whole, not
+  only its Core section.
+- The F-Droid run after the restructure lost one reader's 6 claims to a harness bug: the
+  path repair turned a write into the new `progress/<role>-claims/` directory into a
+  path under the similarly named progress file, which the policy refused (fixed the same
+  day in `harness/repair.py`). Counting them, it is still below the run before.
+- Open: compare the four reports' findings by hand
+  (`reports/_archive/model-compare/` in each workspace under `~/cupella-docs-compare*`);
+  a second run per side; if the reports before the restructure are better, restore the
+  entries the audit marked as duplicates first, which repeated runbook guidance at the
+  point of use.
 
 ## What the numbers do not say
 

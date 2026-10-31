@@ -61,7 +61,10 @@
 # build for it (several minutes, once per Dart version).
 #
 # Network is off except for two steps:
-#   reference-check.py   public registries, fixed allow-list in the script
+#   reference-check.py   public registries, fixed allow-list in the script. Only its fetch
+#                        step is networked, and that container sees one file of public
+#                        identifiers (work/<name>/reference-plan.tsv, written by the
+#                        offline plan step) and work/_reference/: no data/, no sample.
 #   blutter-build.sh     fetches Dart runtime sources from GitHub and compiles. This
 #                        container gets scripts/ and cache/ only: no data/, no work/.
 #                        Its single input is a version string, validated here.
@@ -610,8 +613,16 @@ fi
 
 # offline, with the APK data: every analysis step
 offline() { "$docker" run "${common[@]}" --network none "${analysis[@]}" "$@"; }
-# networked, with the APK data: reference lookups only
-online() { "$docker" run "${common[@]}" --network bridge "${analysis[@]}" "$@"; }
+# networked, with one file of public identifiers and the reference cache, no APK data:
+# the fetch step of reference-check.py
+fetcher() { # <plan path in work/> <args...>
+  local m=() plan=$1
+  shift
+  store_mkdir _reference
+  store_add m work "$plan" /repo/plan.tsv ro
+  store_add m work _reference /repo/work/_reference
+  "$docker" run "${common[@]}" --network bridge "${m[@]}" "$@"
+}
 # networked, without data/ and work/: tool builds
 builder() { "$docker" run "${common[@]}" --network bridge -v "$root/cache:/cache" "$@"; }
 
@@ -836,7 +847,18 @@ case "$cmd" in
   model-leads.py)
     with_llav "$image" "scripts/$cmd" "$@" ;;
   reference-check.py)
-    online "$image" "scripts/$cmd" "$@" ;;
+    # three steps, so that the sample and the network never share a container: the plan
+    # (offline, with the sample) writes the identifiers to look up; the fetch (networked)
+    # sees only that file and work/_reference/; the comparison (offline) prints the report
+    n=${1:?usage: ./cupella reference-check.py <name> [flutter-engine|pub-sources]}
+    which=${2:-all}
+    [[ "$n" =~ ^[A-Za-z0-9._()+-]+$ && "$n" != . && "$n" != .. && "$n" != *..* ]] || { echo "bad sample name: $n" >&2; exit 1; }
+    case $which in all | flutter-engine | pub-sources) ;; *) echo "usage: ./cupella reference-check.py <name> [flutter-engine|pub-sources]" >&2; exit 1 ;; esac
+    offline "$image" scripts/reference-check.py --plan "$n" "$which" >&2 || exit
+    store_is f work "$n/reference-plan.tsv" || { echo "no work/$n/reference-plan.tsv" >&2; exit 1; }
+    fetcher "$n/reference-plan.tsv" "$image" scripts/reference-check.py --fetch /repo/plan.tsv >&2 \
+      || echo "== the fetch step failed; the comparison uses what the cache holds" >&2
+    offline "$image" scripts/reference-check.py "$n" "$which" ;;
   run-decryptor.sh)
     # phase 1: lint and run the agent-written decryptor with this sample's directories
     # read-only and only its decrypt/ writable; phase 2: unpack the outputs as usual

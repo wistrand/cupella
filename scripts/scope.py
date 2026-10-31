@@ -16,8 +16,10 @@ The default scope is therefore:
     to the manifest package. R8 can merge app code and libraries into such a package
     under a generated name (verified: 1,444 classes including the app's config, string
     decoder, and DoS engine), and the rules above miss it.
-Packages nested inside another chosen package are dropped. Directories that jadx did
-not produce are skipped; when nothing remains the scope is "." (everything).
+Packages nested inside another chosen package are dropped. A package segment that jadx
+renamed (an invalid or clashing name gets a prefix: me -> p258me, in -> p001in) is
+followed to the renamed directory. Directories that jadx did not produce are skipped;
+when nothing remains the scope is "." (everything).
 
 Used by scan.sh, structure-leads.py, model-leads.py, and lead-eval.py.
 Usage: scripts/scope.py <name> [--why]   prints the scope, one path per line
@@ -36,6 +38,32 @@ LIBRARY = re.compile(r"^(android|androidx|com\.google|com\.android\.(?:billingcl
                      r"org\.apache|com\.onesignal)(\.|$)")
 FLAT_MIN = 300
 SHORT = re.compile(r"^[A-Za-z_$][\w$]{0,2}\.java$")
+
+
+RENAMED = re.compile(r"^p\d+(.+)$")
+
+
+def jadx_dir(base, path):
+  """the directory under base that holds package path, following jadx's package renames
+  (segment "me" may be "p258me"); None when no directory matches"""
+  cur = base
+  for seg in path.split("/"):
+    if os.path.isdir(os.path.join(cur, seg)):
+      cur = os.path.join(cur, seg)
+      continue
+    try:
+      names = sorted(os.listdir(cur))
+    except OSError:
+      return None
+    hit = []
+    for n in names:
+      m = RENAMED.match(n)
+      if m and m.group(1) == seg and os.path.isdir(os.path.join(cur, n)):
+        hit.append(n)
+    if len(hit) != 1:
+      return None
+    cur = os.path.join(cur, hit[0])
+  return os.path.relpath(cur, base)
 
 
 def flattened(base, pkg, taken):
@@ -92,8 +120,8 @@ def scopes_why(work):
       pkgs.append(p)
   paths, why = [], {}
   for p in sorted(set(pkgs), key=lambda x: (x.count("."), x)):
-    path = p.replace(".", "/")
-    if not os.path.isdir(os.path.join(base, path)):
+    path = jadx_dir(base, p.replace(".", "/"))
+    if path is None:
       continue
     if any(path == q or path.startswith(q + "/") for q in paths):
       continue
